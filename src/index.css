@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.font-display { font-family: 'Barlow Condensed', system-ui, sans-serif; }
+.font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+@keyframes dmg { from { opacity: 1; } to { opacity: 0; } }
+.dmg-flash { opacity: 0; animation: dmg 0.45s ease-out; }
+@keyframes nuke { 0% { opacity: 1; } 30% { opacity: 0.95; } 100% { opacity: 0; } }
+.nuke-flash { opacity: 0; animation: nuke 3.2s ease-out; }
+@keyframes fadein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fadein 0.6s ease-out both; }
