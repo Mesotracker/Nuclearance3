@@ -353,16 +353,14 @@ export function buildCity(game) {
   ]) {
     addGravelZone(gx, gz, gw, gd);
   }
-  // Visible gravel staging aprons & sun-baked cracked drought earth flats along road edges & city outskirts
+  // Visible gravel staging aprons & sun-baked cracked drought earth flats along the city outskirts
   for (const [gx, gz, gw, gd] of [
-    [4.4, -3.5, 4.4, 7.2],
     [-HALF - 26, -40, 18, 28],
     [HALF + 28, 35, 20, 26],
   ]) {
     addGravelZone(gx, gz, gw, gd, 0.018, gravLotMat);
   }
   for (const [dx, dz, dw, dd] of [
-    [-4.4, -3.5, 4.4, 7.2],
     [-HALF - 42, 48, 34, 34],
     [HALF + 42, -55, 36, 32],
     [0, HALF + 36, 38, 28],
@@ -807,9 +805,20 @@ export function buildCity(game) {
     const home = makeHome(seed, roofMat, colliders, obstacles, lot.x, 0.18, lot.z, rotY);
     root.add(home.group);
     interiorLights.push({ pos: new THREE.Vector3(lot.x, 2.7, lot.z), color: 0xffdeb0, intensity: 15 });
+    // Lawn tufts stay outside the house footprint & porch so none poke up through the interior floor
     const hGrass = [];
-    for (let g = 0; g < 16; g++) {
-      hGrass.push({ x: lot.x + (rnd() - 0.5) * 14, y: 0.19, z: lot.z + (rnd() - 0.5) * 14, s: 0.65 + rnd() * 0.45 });
+    const rc = Math.cos(rotY);
+    const rs = Math.sin(rotY);
+    for (let g = 0; g < 40 && hGrass.length < 16; g++) {
+      const lx = (rnd() - 0.5) * 16;
+      const lz = (rnd() - 0.5) * 16;
+      if (Math.abs(lx) < 5.6 && lz > -5.0 && lz < 7.0) continue;
+      hGrass.push({
+        x: lot.x + lx * rc + lz * rs,
+        y: 0.19,
+        z: lot.z - lx * rs + lz * rc,
+        s: 0.65 + rnd() * 0.45,
+      });
     }
     root.add(makeGroundClutter(hGrass, 'park'));
     if (!firstHomeView) {

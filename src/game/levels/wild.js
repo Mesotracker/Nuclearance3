@@ -305,6 +305,33 @@ export function buildWild(game, winter) {
   terrain.receiveShadow = true;
   root.add(terrain);
 
+  // Enterable cabins & homesteads sit on sloped hillsides: flatten a small terrain
+  // pad under each one so the ground never cuts up through its interior floor.
+  const flattenBuildingPad = (cx, cz, halfX, halfZ, rotY, padY, feather = 4) => {
+    const cos = Math.cos(rotY);
+    const sin = Math.sin(rotY);
+    for (let i = 0; i < heights.length; i++) {
+      const wx = pos.getX(i);
+      const wz = pos.getZ(i);
+      const dx = wx - cx;
+      const dz = wz - cz;
+      const lx = dx * cos - dz * sin;
+      const lz = dx * sin + dz * cos;
+      const ox = Math.max(0, Math.abs(lx) - halfX);
+      const oz = Math.max(0, Math.abs(lz) - halfZ);
+      const outside = Math.hypot(ox, oz);
+      if (outside > feather) continue;
+      const t = outside <= 0 ? 1 : 1 - outside / feather;
+      const blend = t * t * (3 - 2 * t);
+      const h = heights[i];
+      const nh = h + (padY - h) * blend;
+      if (Math.abs(nh - h) < 1e-4) continue;
+      heights[i] = nh;
+      pos.setY(i, nh);
+    }
+    pos.needsUpdate = true;
+  };
+
   // Outer mountain/terrain skirt so horizon never cuts off
   const skirt = new THREE.Mesh(
     new THREE.RingGeometry(HALF * 0.98, 1600, 48),
@@ -836,6 +863,7 @@ export function buildWild(game, winter) {
     if (y < WATER + 1 || isReservedPad(x, z)) continue;
     const rotY = side > 0 ? -Math.PI / 2 : Math.PI / 2;
     const cabin = makeEnterableCabin(colliders, obstacles, x, y - 0.18, z, rotY, winter);
+    flattenBuildingPad(x, z, 4.2, 3.9, rotY, y - 0.18);
     root.add(cabin.group);
     interiorLights.push({ pos: cabin.lightPos, color: 0xffc878, intensity: 14 });
     ammoSpawns.push({
@@ -879,6 +907,7 @@ export function buildWild(game, winter) {
     if (y < WATER + 1 || isReservedPad(x, z)) continue;
     const rotY = side > 0 ? -Math.PI / 2 : Math.PI / 2;
     const home = makeHome(i + (winter ? 3 : 0), homeRoofMat, colliders, obstacles, x, y - 0.15, z, rotY, winter);
+    flattenBuildingPad(x, z, 6.0, 5.0, rotY, y - 0.15, 3);
     root.add(home.group);
     interiorLights.push({ pos: home.interactPos.clone().add(new THREE.Vector3(0, 2.8, 0)), color: 0xffe0b0, intensity: 16 });
     interactables.push({
@@ -902,6 +931,10 @@ export function buildWild(game, winter) {
       firePos.push(f.group.position);
     }
   }
+
+  // Recompute lighting on the flattened terrain pads now that every building is placed
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
 
   // ---- Bombed-out suburban/industrial City Ruins flanking highway outskirts ----
   let firstRuinView = null;
