@@ -30,7 +30,7 @@ import {
   woodGripPBR,
 } from './textures.js';
 import { makeAmmoPickup } from './props.js';
-import { WEAPONS, cloneStats } from './types.js';
+import { WEAPONS, cloneStats, difficultyMods } from './types.js';
 
 const SKY_VERT = /* glsl */ `
 varying vec3 vDir;
@@ -117,6 +117,9 @@ void main() {
   #include <colorspace_fragment>
 }
 `;
+
+const MOUSE_SENSITIVITY = 0.0034;
+const _aimTarget = new THREE.Vector3();
 
 const _isSoftwareGl = (() => {
   try {
@@ -541,7 +544,7 @@ export class Game {
   onMouseMove = (e) => {
     if ((!this.locked && !this.allowUnlockedPlay) || this.mode !== 'play') return;
     const ads = this.scoped && this.reloadT <= 0;
-    const sens = 0.0021 * computeScopeFov(this.weapon, ads, this.scopeZoom).sensMult;
+    const sens = MOUSE_SENSITIVITY * computeScopeFov(this.weapon, ads, this.scopeZoom).sensMult;
     this.yaw -= e.movementX * sens;
     this.pitch -= e.movementY * sens;
     this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
@@ -1192,6 +1195,10 @@ export class Game {
 
   // ---------------- actors / fx ----------------
   addActor(a, yOverride) {
+    const mods = difficultyMods(this.stats);
+    a.health *= mods.enemyHealth;
+    a.accuracy *= mods.enemyAccuracy;
+    a.fireCdMult = mods.enemyFireRate;
     a.group.position.y = yOverride !== undefined ? yOverride : (this.level ? this.level.heightAt(a.pos.x, a.pos.z) : 0);
     this.actors.push(a);
     this.scene.add(a.group);
@@ -1200,7 +1207,8 @@ export class Game {
 
   damagePlayer(amount, reason) {
     if (this.mode !== 'play' || amount <= 0) return;
-    this.stats.health = Math.max(0, this.stats.health - amount);
+    const dealt = amount * difficultyMods(this.stats).incomingDamage;
+    this.stats.health = Math.max(0, this.stats.health - dealt);
     this.shake = Math.max(this.shake, 0.35);
     if (this.hurtCd <= 0) {
       audio.hurt();
@@ -1416,6 +1424,25 @@ export class Game {
     this.pickups.push({ mesh, pos: mesh.position.clone(), kind, amount, grenade });
   }
 
+  aimAssistDir(origin, fwd, range, strength) {
+    let bestDir = null;
+    let bestAngle = 0.055;
+    for (const a of this.actors) {
+      if (a.dead || a.kind === 'civilian') continue;
+      _aimTarget.set(a.pos.x, a.pos.y + (a.kind === 'wolf' ? 0.7 : 1.2), a.pos.z).sub(origin);
+      const dist = _aimTarget.length();
+      if (dist < 0.5 || dist > range) continue;
+      _aimTarget.multiplyScalar(1 / dist);
+      const ang = _aimTarget.angleTo(fwd);
+      if (ang < bestAngle) {
+        bestAngle = ang;
+        bestDir = _aimTarget;
+      }
+    }
+    if (!bestDir) return fwd;
+    return fwd.clone().lerp(bestDir, strength).normalize();
+  }
+
   fire() {
     if (this.weapon === 'grenade') {
       this.throwGrenade();
@@ -1432,16 +1459,17 @@ export class Game {
       }
       this.clips[w.id]--;
     }
+    const mods = difficultyMods(this.stats);
     this.fireCd = w.rate;
-    this.recoil = w.id === 'shotgun' ? 1.05 : w.id === 'fists' ? 0.8 : w.id === 'rifle' ? 0.48 : 0.55;
-    // Camera shake impulse per weapon when firing
-    const fireShake = w.id === 'shotgun' ? 0.72 : w.id === 'rifle' ? 0.34 : w.id === 'pistol' ? 0.28 : 0.16;
+    this.recoil = w.id === 'shotgun' ? 0.85 : w.id === 'fists' ? 0.7 : w.id === 'rifle' ? 0.36 : 0.42;
+    // Camera shake impulse per weapon when firing (kept light so aim stays on target)
+    const fireShake = w.id === 'shotgun' ? 0.5 : w.id === 'rifle' ? 0.2 : w.id === 'pistol' ? 0.16 : 0.11;
     this.shake = Math.max(this.shake, fireShake);
     const ads = this.scoped && this.reloadT <= 0 && (w.id === 'pistol' || w.id === 'shotgun' || w.id === 'rifle');
     if (w.id !== 'fists') {
       const kickScale = ads ? 0.65 : 1;
-      this.pitch += (w.id === 'shotgun' ? 0.048 : w.id === 'rifle' ? 0.015 : 0.018) * kickScale;
-      this.yaw += (Math.random() - 0.5) * (w.id === 'shotgun' ? 0.022 : 0.007) * kickScale;
+      this.pitch += (w.id === 'shotgun' ? 0.028 : w.id === 'rifle' ? 0.009 : 0.011) * kickScale;
+      this.yaw += (Math.random() - 0.5) * (w.id === 'shotgun' ? 0.012 : 0.004) * kickScale;
       this.muzzleLight.intensity = w.id === 'shotgun' ? 12 : 9;
       this.muzzleFlashT = w.id === 'rifle' ? 0.055 : 0.075;
       this.muzzleFlash.visible = true;
@@ -1475,12 +1503,15 @@ export class Game {
     const fwd = new THREE.Vector3();
     this.camera.getWorldDirection(fwd);
     const muzzle = this.muzzleFlash.getWorldPosition(new THREE.Vector3());
-    const spreadMul = (this.moving ? 1.55 : 1) * computeScopeFov(w.id, ads, this.scopeZoom).spreadMult;
+    const spreadMul = (this.moving ? 1.3 : 1) * computeScopeFov(w.id, ads, this.scopeZoom).spreadMult * mods.spread;
+    // Soft aim assist: nudge the shot cone toward a hostile under the reticle (walls still block the ray)
+    const aimDir = this.aimAssistDir(origin, fwd, w.range, ads ? 0.55 : 0.3);
+    const spread = w.spread * spreadMul;
     for (let i = 0; i < w.pellets; i++) {
-      const dir = fwd.clone();
-      dir.x += (Math.random() - 0.5) * w.spread * 2 * spreadMul;
-      dir.y += (Math.random() - 0.5) * w.spread * 2 * spreadMul;
-      dir.z += (Math.random() - 0.5) * w.spread * 2 * spreadMul;
+      const dir = aimDir.clone();
+      dir.x += (Math.random() - 0.5) * spread * 2;
+      dir.y += (Math.random() - 0.5) * spread * 2;
+      dir.z += (Math.random() - 0.5) * spread * 2;
       dir.normalize();
       this.raycaster.set(origin, dir);
       this.raycaster.far = w.range;
@@ -1494,7 +1525,7 @@ export class Game {
         const actor = hitA.object.userData.actor;
         const head = !!hitA.object.userData.head;
         const falloff = w.id === 'shotgun' ? Math.max(0.3, 1 - hitA.distance / w.range) : 1;
-        const killed = actor.takeDamage(w.damage * (head ? 2.2 : 1) * falloff, dir, head);
+        const killed = actor.takeDamage(w.damage * mods.playerDamage * (head ? 2.2 : 1) * falloff, dir, head);
         this.puff(hitA.point, 0x7a0a0a, 0.35);
         if (killed) this.onKill(actor);
       } else if (hitW) {
@@ -2035,6 +2066,7 @@ export class Game {
       sprint,
       ambientRad: ambient,
       nearFire: this.nearFire,
+      drainMult: difficultyMods(s).survivalDrain,
     });
     this.stats = stepped.stats;
     this.geigerRate = stepped.geigerRate;
@@ -2098,6 +2130,7 @@ export class Game {
     this.onUpdate({
       phase: this.phase,
       stats: cloneStats(this.stats),
+      difficulty: this.stats.difficulty ?? 'normal',
       weapon: this.weapon,
       clip: this.weapon === 'grenade' ? (this.stats.grenades ?? 0) : this.clips[this.weapon],
       timer: this.timer,

@@ -1,4 +1,4 @@
-import { WEAPONS, cloneStats } from './types.js';
+import { WEAPONS, cloneStats, difficultyMods } from './types.js';
 
 // Fallout decay "7-10 rule": dose rate R(t) = R1 * t^-1.2 (t in hours)
 export const R1 = 520;
@@ -141,16 +141,17 @@ export function generateAmmoDrop(kind, stats, rng = Math.random) {
   return { ammoKind: 'pistol', amount: Math.max(4, Math.round(6 * yld)), grenade: 0 };
 }
 
-export function stepSurvivalStats(stats, { dt, phase, sprint, ambientRad, nearFire }) {
+export function stepSurvivalStats(stats, { dt, phase, sprint, ambientRad, nearFire, drainMult }) {
   const s = cloneStats(stats);
+  const drainScale = drainMult ?? difficultyMods(s).survivalDrain;
   if (phase === 'shelter') {
-    s.hunger = Math.max(0, s.hunger - dt * 0.14 * (sprint ? 1.3 : 1));
-    s.thirst = Math.max(0, s.thirst - dt * 0.18 * (sprint ? 1.35 : 1));
+    s.hunger = Math.max(0, s.hunger - dt * 0.12 * drainScale * (sprint ? 1.3 : 1));
+    s.thirst = Math.max(0, s.thirst - dt * 0.15 * drainScale * (sprint ? 1.35 : 1));
     return { stats: s, geigerRate: ambientRad, deathReason: null };
   }
   const wild = phase !== 'city';
-  s.hunger = Math.max(0, s.hunger - dt * (wild ? 0.52 : 0.38) * (sprint ? 1.35 : 1));
-  s.thirst = Math.max(0, s.thirst - dt * (wild ? 0.68 : 0.50) * (sprint ? 1.4 : 1));
+  s.hunger = Math.max(0, s.hunger - dt * (wild ? 0.46 : 0.36) * drainScale * (sprint ? 1.35 : 1));
+  s.thirst = Math.max(0, s.thirst - dt * (wild ? 0.60 : 0.48) * drainScale * (sprint ? 1.4 : 1));
 
   let deathReason = null;
   const drain = (amount, reason) => {
@@ -158,19 +159,19 @@ export function stepSurvivalStats(stats, { dt, phase, sprint, ambientRad, nearFi
     if (s.health <= 0 && !deathReason) deathReason = reason;
   };
 
-  if (s.hunger <= 0) drain(dt * 2.2, 'Starved to death');
-  if (s.thirst <= 0) drain(dt * 2.8, 'Died of dehydration');
+  if (s.hunger <= 0) drain(dt * 2.6 * Math.max(0.35, drainScale), 'Starved to death');
+  if (s.thirst <= 0) drain(dt * 3.2 * Math.max(0.35, drainScale), 'Died of dehydration');
 
   const radMult = s.radResistMult ?? 1;
-  const geigerRate = ambientRad * s.exposureMult * radMult;
+  const geigerRate = ambientRad * s.exposureMult * radMult * Math.max(0.35, drainScale);
   s.radiation += geigerRate * dt;
-  if (s.radiation > 45) drain(dt * ((s.radiation - 45) / 14), 'Acute radiation sickness');
+  if (s.radiation > 60) drain(dt * ((s.radiation - 60) / 14), 'Acute radiation sickness');
 
   if (phase === 'winter') {
     const coldMult = s.coldMult ?? 1;
     if (nearFire) s.warmth = Math.min(100, s.warmth + dt * 12);
-    else s.warmth = Math.max(0, s.warmth - dt * (sprint ? 0.75 : 1.0) * coldMult);
-    if (s.warmth <= 0) drain(dt * 3.0, 'Froze to death in the nuclear winter');
+    else s.warmth = Math.max(0, s.warmth - dt * (sprint ? 0.75 : 1.0) * coldMult * Math.max(0.4, drainScale));
+    if (s.warmth <= 0) drain(dt * 3.0 * Math.max(0.35, drainScale), 'Froze to death in the nuclear winter');
   }
 
   if (s.hunger > 80 && s.thirst > 80 && s.radiation < 20 && s.health < 100 && s.warmth > 35) {
@@ -265,8 +266,9 @@ export function stepShelterDay(stats, currentDay, rng = Math.random) {
   const nd = currentDay + 1;
   const n = cloneStats(stats);
   const fortified = n.bunkerTier === 'military' || n.bunkerTier === 'tunnel';
-  n.hunger = Math.max(0, n.hunger - 22);
-  n.thirst = Math.max(0, n.thirst - 26);
+  const drainScale = difficultyMods(n).survivalDrain;
+  n.hunger = Math.max(0, n.hunger - 22 * drainScale);
+  n.thirst = Math.max(0, n.thirst - 26 * drainScale);
   n.radiation += doseRate(nd) * 24 * (fortified ? 0.004 : 0.011) * (n.radResistMult ?? 1);
   if (n.hunger <= 0) n.health -= 18;
   if (n.thirst <= 0) n.health -= 25;

@@ -1,4 +1,4 @@
-import { CLASSES, WEAPONS } from '../game/types.js';
+import { CLASSES, DIFFICULTIES, WEAPONS } from '../game/types.js';
 
 function Bar({ label, value, color, icon, warn }) {
   const v = Math.max(0, Math.min(100, value));
@@ -186,7 +186,8 @@ export default function HUD({ hud, log, damage, flash, cinematic }) {
             </div>
             <div className="flex items-center justify-between gap-3 text-[11px] tabular-nums">
               <span className="text-amber-300 font-bold">
-                LVL {s.level ?? 1} · {CLASSES[s.classId]?.name ?? 'Scavenger'}
+                LVL {s.level ?? 1} · {CLASSES[s.classId]?.name ?? 'Scavenger'} ·{' '}
+                <span className="text-sky-300">{(DIFFICULTIES[hud.difficulty ?? 'normal'] ?? DIFFICULTIES.normal).label}</span>
               </span>
               <span className="text-stone-400">
                 {s.xp ?? 0}/{s.xpToNext ?? 100} XP

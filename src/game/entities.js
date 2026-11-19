@@ -47,6 +47,7 @@ export class Actor {
   repath = Math.random() * 0.5;
   fireCd = 1 + Math.random();
   aggro = false;
+  fireCdMult = 1;
   walkPhase = Math.random() * 10;
   armed;
   accuracy;
@@ -66,7 +67,7 @@ export class Actor {
       this.speed = 2.2;
       this.runSpeed = 8.5;
       this.accuracy = 1;
-      this.damage = 13;
+      this.damage = 10;
       this.range = 2.0;
       this.buildWolf();
       addContactShadow(this.group, 0.75, 0.03, 0.4);
@@ -74,8 +75,8 @@ export class Actor {
       this.health = kind === 'police' ? 90 : kind === 'raider' ? 80 : 40;
       this.speed = 1.4;
       this.runSpeed = kind === 'civilian' ? 5.2 : 4.8;
-      this.accuracy = kind === 'police' ? 0.62 : 0.56;
-      this.damage = kind === 'police' ? 11 : 11;
+      this.accuracy = kind === 'police' ? 0.5 : 0.45;
+      this.damage = 9;
       this.range = kind === 'raider' ? 42 : 38;
       this.buildHuman();
       addContactShadow(this.group, 0.55, 0.03, 0.38);
@@ -357,7 +358,7 @@ export class Actor {
         moveSpeed = dist > 1.4 ? this.runSpeed : 0;
         face = Math.atan2(_toP.x, _toP.z);
         if (dist < this.range && this.fireCd <= 0) {
-          this.fireCd = 0.9 + Math.random() * 0.4;
+          this.fireCd = (1.1 + Math.random() * 0.5) * this.fireCdMult;
           w.damagePlayer(this.damage, 'Mauled by wolves');
         }
       } else {
@@ -382,8 +383,8 @@ export class Actor {
           _strafe.set(-_toP.z, 0, _toP.x).normalize().multiplyScalar(Math.sin(performance.now() / 900 + this.id) * 3);
           this.target.copy(p).add(_strafe);
           if (this.fireCd <= 0) {
-            this.fireCd = 0.7 + Math.random() * 0.75;
-            let hitChance = Math.max(0.16, this.accuracy - dist / 85);
+            this.fireCd = (0.9 + Math.random() * 0.9) * this.fireCdMult;
+            let hitChance = Math.max(0.12, this.accuracy - dist / 95);
             if (w.playerMoving) hitChance *= 0.74;
             const miss = Math.random() > hitChance;
             _missTarget.copy(_pe);

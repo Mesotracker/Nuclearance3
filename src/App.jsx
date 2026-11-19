@@ -5,7 +5,7 @@ import HUD from './components/HUD.jsx';
 import { Game } from './game/Game.js';
 import { audio } from './game/audio.js';
 import { applyBunkerSupplyBonus, calculateScore } from './game/rules.js';
-import { CLASSES, cloneStats, freshStats } from './game/types.js';
+import { CLASSES, DIFFICULTIES, cloneStats, freshStats } from './game/types.js';
 
 const CONTROLS = [
   ['WASD / Arrows', 'Move / Turn'],
@@ -49,6 +49,7 @@ export default function App() {
   const [manualPause, setManualPause] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState('scavenger');
+  const [selectedDifficulty, setSelectedDifficulty] = useState('normal');
 
   const eventHandlerRef = useRef(null);
   const onEvent = useCallback((e) => eventHandlerRef.current?.(e), []);
@@ -115,8 +116,12 @@ export default function App() {
   };
 
   const newGame = useCallback(
-    (opts = {}) => startPhase('city', freshStats(selectedClass), opts),
-    [startPhase, selectedClass],
+    (opts = {}) => {
+      const stats = freshStats(selectedClass);
+      stats.difficulty = selectedDifficulty;
+      startPhase('city', stats, opts);
+    },
+    [startPhase, selectedClass, selectedDifficulty],
   );
 
   const retry = () => {
@@ -154,6 +159,8 @@ export default function App() {
       const tier = params.get('tier');
       const cls = params.get('class') || 'scavenger';
       let stats = freshStats(cls);
+      const diffParam = params.get('difficulty');
+      if (DIFFICULTIES[diffParam]) stats.difficulty = diffParam;
       if (tier === 'military' || tier === 'tunnel' || tier === 'public') {
         stats.bunkerTier = tier;
       }
@@ -361,6 +368,35 @@ export default function App() {
                       <div className="text-[11px] text-stone-400 mt-0.5">{cls.role}</div>
                       <div className="text-xs text-amber-200/90 mt-1.5 leading-snug">{cls.perk}</div>
                       <div className="text-[11px] font-mono text-stone-300 mt-1.5">{cls.kit}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Difficulty selection */}
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-semibold text-stone-300 tracking-wide">Choose Difficulty</div>
+              <div className="grid grid-cols-3 gap-2.5 max-w-2xl">
+                {Object.values(DIFFICULTIES).map((diff) => {
+                  const active = selectedDifficulty === diff.id;
+                  return (
+                    <button
+                      key={diff.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setSelectedDifficulty(diff.id)}
+                      className={`text-left rounded-lg p-3 border transition cursor-pointer ${
+                        active
+                          ? 'bg-stone-900/95 border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)]'
+                          : 'bg-black/75 border-white/15 hover:border-white/35'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-sm text-white">{diff.name}</span>
+                        <span className="text-[11px] font-mono text-amber-300">{active ? 'Active' : 'Select'}</span>
+                      </div>
+                      <div className="text-[11px] text-stone-400 mt-0.5 leading-snug">{diff.blurb}</div>
                     </button>
                   );
                 })}

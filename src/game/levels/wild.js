@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Actor } from '../entities.js';
 import { audio } from '../audio.js';
 import { resolveTerminalHack } from '../rules.js';
+import { difficultyMods } from '../types.js';
 import { asphaltPBR, barkPBR, concretePBR, droughtPBR, fbm, gravelPBR, groundPBR, mulberry32, signTexture } from '../textures.js';
 import {
   beacon,
@@ -1700,7 +1701,7 @@ export function buildWild(game, winter) {
       });
       spawnCd -= dt;
       if (spawnCd <= 0) {
-        spawnCd = 35 + R() * 25;
+        spawnCd = (35 + R() * 25) * difficultyMods(game.stats).spawnRate;
         const hostiles = game.actors.filter((a) => !a.dead && a.pos.distanceTo(game.pos) < 120).length;
         if (hostiles < 4) {
           const ang = R() * Math.PI * 2;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Actor } from '../entities.js';
 import { audio } from '../audio.js';
+import { difficultyMods } from '../types.js';
 import { asphaltPBR, concretePBR, droughtPBR, facadePBR, gravelPBR, groundPBR, signTexture, smokeTexture } from '../textures.js';
 import {
   beacon,
@@ -1590,7 +1591,7 @@ export function buildCity(game) {
       const cops = game.actors.filter((a) => a.kind === 'police' && !a.dead).length;
       const target = game.wanted >= 1 ? Math.min(5, Math.ceil(game.wanted)) : 2;
       if (spawnCd <= 0 && cops < target) {
-        spawnCd = game.wanted >= 3 ? 6 : 10;
+        spawnCd = (game.wanted >= 3 ? 6 : 10) * difficultyMods(game.stats).spawnRate;
         const p = randomStreetPos(55, 110);
         const cop = game.addActor(new Actor('police', p.x, p.z));
         if (game.wanted >= 1) cop.aggro = true;
