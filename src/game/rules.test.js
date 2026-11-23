@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CLASSES, WEAPONS, freshStats } from './types.js';
 import {
+  aimAssistCone,
   applyBunkerSupplyBonus,
   calculateScore,
   clampDeltaTime,
@@ -183,6 +184,25 @@ test('computeScopeFov and computeRagdollImpulse scale ADS optics and knockback a
   assert.ok(Math.abs(bodyHit.nz - 0.8) < 1e-6);
   assert.ok(headHit.headSnap > bodyHit.headSnap);
   assert.ok(Math.hypot(headHit.vx, headHit.vz) > Math.hypot(bodyHit.vx, bodyHit.vz));
+});
+
+test('M24 sniper is a high-damage long-range optic platform', () => {
+  assert.ok(WEAPONS.sniper.damage > WEAPONS.rifle.damage);
+  assert.ok(WEAPONS.sniper.range > WEAPONS.rifle.range);
+  assert.ok(WEAPONS.sniper.mag <= 5);
+  assert.equal(freshStats().ammo.sniper, 0);
+
+  const rifleAds = computeScopeFov('rifle', true, 0);
+  const sniper6x = computeScopeFov('sniper', true, 0);
+  const sniper10x = computeScopeFov('sniper', true, 1);
+  assert.ok(sniper6x.fov < rifleAds.fov);
+  assert.ok(sniper10x.fov < sniper6x.fov);
+  assert.ok(sniper10x.spreadMult < sniper6x.spreadMult);
+  assert.ok(sniper10x.sensMult < sniper6x.sensMult);
+
+  // Aim assist widens at distance but stays tighter than a very wide spray cone
+  assert.ok(aimAssistCone(120) > aimAssistCone(5));
+  assert.ok(aimAssistCone(1000) <= 0.15);
 });
 
 test('calculateScore rewards kills, cash, survival health, and low radiation', () => {

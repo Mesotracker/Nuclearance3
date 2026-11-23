@@ -77,15 +77,16 @@ const PHASES = [
     landmarks: [
       'Barrel Fires & Cabin Woodstoves restore Warmth rapidly (+12/sec) and push back frostbite',
       'Frozen City Ruins, Homesteads & Outposts hold extra MREs, medkits, 5.56 ammo & grenades',
-      'Use [F] or Right-Click Scope (Mouse Wheel toggles 2.25x / 3.0x on Rifle) to clear ridge raiders',
+      'Use [F] / Right-Click Scope and the M24 Sniper (6x / 10x wheel zoom) to clear ridge raiders at long range',
     ],
   },
 ];
 
 const QUICK_KEYS = [
-  ['WASD / Shift / Space', 'Move / Sprint / Jump'],
+  ['WASD / Shift / Space', 'Move / Sprint / Jump (drive when in a car)'],
+  ['E (at a car)', 'Hijack / Exit vehicle'],
   ['F or Right-Click', 'Toggle Scope / ADS'],
-  ['Mouse Wheel (Rifle)', '2.25x / 3.0x Optic Zoom'],
+  ['Mouse Wheel (Rifle / Sniper)', '2.25x / 3.0x or 6x / 10x Optic Zoom'],
   ['C / V', 'Eat Food / Drink Water'],
   ['H / X', 'Medkit / Rad-X Pills'],
   ['G / R', 'Throw Frag / Reload'],

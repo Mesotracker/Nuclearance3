@@ -160,11 +160,14 @@ export function buildCity(game) {
   const obstacles = [];
   const interactables = [];
   const policeCars = [];
+  const vehicles = [];
   const fires = [];
   const skyPlumes = [];
   const interiorLights = [];
   const ammoSpawns = [];
   const hvacMats = [];
+  const corniceMats = [];
+  const plinthMats = [];
   const rnd = Math.random;
 
   const skyStart = {
@@ -544,11 +547,13 @@ export function buildCity(game) {
         interactables.push({
           pos: garage.armoryPos,
           radius: 3.2,
-          label: 'Loot Rooftop SWAT Armory Crate (+60 5.56, +18 Shells, +2 Grenades, +2 Medkits)',
+          label: 'Loot Rooftop SWAT Armory Crate (+M24 +10 rds, +60 5.56, +18 Shells, +2 Grenades, +2 Medkits)',
           hold: 1.4,
           action: () => {
             if (!game.stats.weapons.includes('rifle')) game.giveWeapon('rifle', 60);
             else game.stats.ammo.rifle += 60;
+            if (!game.stats.weapons.includes('sniper')) game.giveWeapon('sniper', 10);
+            else game.stats.ammo.sniper += 10;
             game.stats.ammo.shotgun += 18;
             game.stats.grenades = (game.stats.grenades ?? 0) + 2;
             game.stats.meds += 2;
@@ -719,6 +724,9 @@ export function buildCity(game) {
           root.add(b);
           obstacles.push(b);
           colliders.push({ minX: ox - w / 2, maxX: ox + w / 2, minZ: oz - d / 2, maxZ: oz + d / 2 });
+          // Projecting stone cornice and street-level plinth give every facade a real silhouette
+          corniceMats.push(new THREE.Matrix4().makeScale(w + 0.7, 0.5, d + 0.7).setPosition(ox, h + 0.36, oz));
+          plinthMats.push(new THREE.Matrix4().makeScale(w + 0.34, 1.15, d + 0.34).setPosition(ox, 0.75, oz));
 
           if (h >= 12) {
             hvacMats.push(
@@ -900,19 +908,21 @@ export function buildCity(game) {
         if (police) policeCars.push(car);
         const hw = vertical ? 1.05 : 2.2;
         const hd = vertical ? 2.2 : 1.05;
-        colliders.push({ minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd });
-        const side2 = vertical ? new THREE.Vector3(Math.sign(-lane) * 1.8, 0, 0) : new THREE.Vector3(0, 0, Math.sign(-lane) * 1.8);
-        interactables.push({
-          pos: car.position.clone().add(side2),
-          radius: 2.5,
-          label: police ? 'Break into police cruiser (crime)' : 'Break into car (crime)',
-          hold: 1.2,
-          action: () => {
-            audio.glass();
+        const col = { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd };
+        colliders.push(col);
+        const veh = { group: car, collider: col, police, interact: null };
+        vehicles.push(veh);
+
+        // Hotwire: first entry pops the glovebox, then the player drives off in it
+        const hotwire = () => {
+          if (game.vehicle) return;
+          audio.glass();
+          const s = game.stats;
+          if (!car.userData.looted) {
+            car.userData.looted = true;
             game.stats.crimes++;
             game.wanted = Math.min(5, game.wanted + (police ? 1 : 0.25));
             game.alarm = 4;
-            const s = game.stats;
             const r = rnd();
             let got = '';
             if (police) {
@@ -954,8 +964,19 @@ export function buildCity(game) {
               audio.pickup();
               game.msg('Car break-in: ' + got, 'loot');
             } else game.msg('Car break-in: nothing useful', 'info');
-          },
-        });
+          }
+          game.enterVehicle(veh);
+        };
+        const interact = {
+          pos: car.position,
+          radius: 2.8,
+          repeat: true,
+          hold: 0.7,
+          label: police ? 'Hijack police cruiser (crime)' : 'Hijack car (crime)',
+          action: hotwire,
+        };
+        veh.interact = interact;
+        interactables.push(interact);
       }
     }
   }
@@ -998,6 +1019,23 @@ export function buildCity(game) {
     hvacIM.computeBoundingSphere();
     root.add(hvacIM);
   }
+  const stoneTrimMat = new THREE.MeshStandardMaterial({ color: 0xb9b1a2, roughness: 0.84, metalness: 0.05 });
+  const plinthMat = new THREE.MeshStandardMaterial({ color: 0x55524c, roughness: 0.95, metalness: 0.04 });
+  if (corniceMats.length) {
+    const corniceIM = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), stoneTrimMat, corniceMats.length);
+    corniceMats.forEach((m, i) => corniceIM.setMatrixAt(i, m));
+    corniceIM.castShadow = corniceIM.receiveShadow = true;
+    corniceIM.computeBoundingSphere();
+    root.add(corniceIM);
+  }
+  if (plinthMats.length) {
+    const plinthIM = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), plinthMat, plinthMats.length);
+    plinthMats.forEach((m, i) => plinthIM.setMatrixAt(i, m));
+    plinthIM.castShadow = plinthIM.receiveShadow = true;
+    plinthIM.computeBoundingSphere();
+    root.add(plinthIM);
+  }
+
   const bolGeo = new THREE.CylinderGeometry(0.11, 0.13, 0.85, 8);
   bolGeo.translate(0, 0.425, 0);
   const bolIM = new THREE.InstancedMesh(bolGeo, new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.5, roughness: 0.4 }), (N + 1) * (N + 1) * 2);
@@ -1338,6 +1376,24 @@ export function buildCity(game) {
   const spawnX = -HALF + CELL * 3;
   const spawnZ = -HALF + CELL * 3 + 4;
   game.pos.set(spawnX, 0, spawnZ);
+
+  // Overwatch sniper case steps from the player spawn
+  const sniperCase = makeCrate(true);
+  sniperCase.position.set(spawnX - 7, 0, spawnZ + 7);
+  root.add(sniperCase);
+  interactables.push({
+    pos: new THREE.Vector3(spawnX - 7, 0, spawnZ + 7),
+    radius: 2.8,
+    label: 'Open overwatch sniper case (M24 + 10 rds)',
+    hold: 1.0,
+    action: () => {
+      if (!game.stats.weapons.includes('sniper')) game.giveWeapon('sniper', 10);
+      else game.stats.ammo.sniper += 10;
+      audio.pickup();
+      game.msg('M24 Sniper Rifle acquired — [5] equip · [F] scope · wheel for 6x/10x', 'loot');
+    },
+  });
+
   const startHospitalMission = () => {
     if (missionState !== 'idle' || !hospital) return;
     missionState = 'active';
@@ -1442,6 +1498,7 @@ export function buildCity(game) {
     interactables,
     interiorLights,
     ammoSpawns,
+    vehicles,
     bounds: HALF + 120,
     spawn: { x: spawnX, z: spawnZ, yaw: 0 },
     bunkerView: {
@@ -1610,6 +1667,7 @@ function addDealer(game, list, pos) {
   const s = () => game.stats;
   const offers = [
     { name: 'AR-15 Rifle + 45 rds', price: 240, ok: () => !s().weapons.includes('rifle'), give: () => game.giveWeapon('rifle', 45) },
+    { name: 'M24 Sniper Rifle + 12 rds', price: 420, ok: () => !s().weapons.includes('sniper'), give: () => game.giveWeapon('sniper', 12) },
     { name: 'Pump Shotgun + 16 shells', price: 140, ok: () => !s().weapons.includes('shotgun'), give: () => game.giveWeapon('shotgun', 16) },
     { name: 'Frag Grenades x3', price: 75, ok: () => (s().grenades ?? 0) < 10, give: () => (s().grenades = (s().grenades ?? 0) + 3) },
     { name: '9mm Pistol + 30 rds', price: 70, ok: () => !s().weapons.includes('pistol'), give: () => game.giveWeapon('pistol', 30) },

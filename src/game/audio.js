@@ -72,6 +72,10 @@ export class AudioFX {
     if (kind === 'shotgun') {
       this.noise(0.55, 1800 * pitch, 0.7, 0.9 * att);
       this.noise(0.25, 300 * pitch, 1, 0.8 * att);
+    } else if (kind === 'sniper') {
+      this.noise(0.85, 2400 * pitch, 0.45, 0.95 * att);
+      this.noise(0.42, 260 * pitch, 1, 0.8 * att);
+      this.tone(95, 0.32, 0.24, 'sawtooth', 38);
     } else if (kind === 'rifle') {
       this.noise(0.22, 3500 * pitch, 0.6, 0.6 * att);
       this.noise(0.12, 600 * pitch, 1, 0.5 * att);

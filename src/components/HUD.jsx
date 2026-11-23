@@ -90,14 +90,22 @@ export default function HUD({ hud, log, damage, flash, cinematic }) {
               ))}
               <circle cx="200" cy="200" r="2.2" fill="#ef4444" />
             </svg>
-            <div className="absolute bottom-[12%] bg-black/80 border border-white/20 px-3 py-1 rounded text-xs text-amber-300 tabular-nums">
-              OPTIC {hud.zoomLabel} · [F] / Right-Click Exit{hud.weapon === 'rifle' ? ' · Wheel Zoom' : ''}
-            </div>
+                          <div className="absolute bottom-[12%] flex flex-col items-center gap-1">
+                <div className="bg-black/80 border border-white/20 px-3 py-1 rounded text-xs text-amber-300 tabular-nums">
+                  OPTIC {hud.zoomLabel} · [F] / Right-Click Exit
+                  {hud.weapon === 'rifle' || hud.weapon === 'sniper' ? ' · Wheel Zoom' : ''}
+                </div>
+                {hud.targetDist ? (
+                  <div className="bg-black/80 border border-emerald-500/40 px-3 py-0.5 rounded text-[11px] text-emerald-300 tabular-nums">
+                    RANGE {Math.round(hud.targetDist)}m
+                  </div>
+                ) : null}
+              </div>
           </div>
         )}
 
         {/* crosshair */}
-        {(hud.locked || hud.allowUnlockedPlay) && !hud.scoped && (
+        {(hud.locked || hud.allowUnlockedPlay) && !hud.scoped && !hud.driving && (
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <div className="relative h-6 w-6">
               <div className="absolute left-1/2 top-0 h-2 w-[2px] -translate-x-1/2 bg-white/80" />
@@ -261,6 +269,15 @@ export default function HUD({ hud, log, damage, flash, cinematic }) {
 
         {/* weapon + inventory */}
         <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2 tabular-nums">
+          {hud.driving && (
+            <div className="bg-black/75 border border-emerald-500/45 rounded px-4 py-2 text-right min-w-56">
+              <div className="text-[10px] tracking-[0.24em] text-emerald-300">HIJACKED VEHICLE</div>
+              <div className="text-3xl font-black tabular-nums">
+                {Math.round((hud.vehicleSpeed ?? 0) * 3.6)} <span className="text-sm text-stone-400">km/h</span>
+              </div>
+              <div className="text-[10px] text-stone-300">[W/S] Drive · [A/D] Steer · [Space] Brake · [E] Exit</div>
+            </div>
+          )}
           <div className="flex gap-2 text-xs">
             {[
               ['C', '🥫', s.food],
@@ -283,7 +300,7 @@ export default function HUD({ hud, log, damage, flash, cinematic }) {
           </div>
           <div className="bg-black/75 border border-white/20 rounded px-4 py-2 text-right min-w-56">
             <div className="flex items-center justify-end gap-2 text-sm text-stone-300">
-              {(hud.weapon === 'pistol' || hud.weapon === 'shotgun' || hud.weapon === 'rifle') && (
+              {(hud.weapon === 'pistol' || hud.weapon === 'shotgun' || hud.weapon === 'rifle' || hud.weapon === 'sniper') && (
                 <span className="text-[10px] text-amber-300/90">[F] {hud.scoped ? hud.zoomLabel : 'Scope'}</span>
               )}
               <span>{w.name}</span>
@@ -303,7 +320,7 @@ export default function HUD({ hud, log, damage, flash, cinematic }) {
               )}
             </div>
             <div className="flex gap-1 justify-end mt-1">
-              {['fists', 'pistol', 'shotgun', 'rifle', 'grenade'].map((id, i) => {
+              {['fists', 'pistol', 'shotgun', 'rifle', 'sniper', 'grenade'].map((id, i) => {
                 const owned = id === 'grenade' ? (s.grenades ?? 0) > 0 : s.weapons.includes(id);
                 return (
                   <span

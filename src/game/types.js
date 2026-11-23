@@ -3,6 +3,7 @@ export const WEAPONS = {
   pistol: { id: 'pistol', name: '9mm Pistol', damage: 40, range: 75, rate: 0.13, mag: 15, pellets: 1, spread: 0.006, auto: false, reload: 0.82 },
   shotgun: { id: 'shotgun', name: 'Pump Shotgun', damage: 20, range: 30, rate: 0.44, mag: 8, pellets: 9, spread: 0.048, auto: false, reload: 1.15 },
   rifle: { id: 'rifle', name: 'AR-15 Rifle', damage: 46, range: 145, rate: 0.07, mag: 36, pellets: 1, spread: 0.007, auto: true, reload: 1.0 },
+  sniper: { id: 'sniper', name: 'M24 Sniper Rifle', damage: 135, range: 420, rate: 1.15, mag: 5, pellets: 1, spread: 0.0015, auto: false, reload: 2.15 },
   grenade: { id: 'grenade', name: 'Frag Grenade', damage: 140, range: 9.5, rate: 0.45, mag: 1, pellets: 0, spread: 0, auto: false, reload: 0 },
 };
 
@@ -107,7 +108,7 @@ export function freshStats(classId = 'scavenger') {
     meds: 1,
     radpills: 1,
     grenades: 2,
-    ammo: { pistol: 24, shotgun: 0, rifle: 0 },
+    ammo: { pistol: 24, shotgun: 0, rifle: 0, sniper: 0 },
     weapons: ['fists'],
     cash: 40,
     crimes: 0,

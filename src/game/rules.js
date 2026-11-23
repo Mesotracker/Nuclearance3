@@ -130,8 +130,8 @@ export function generateAmmoDrop(kind, stats, rng = Math.random) {
     };
   }
   if (kind === 'raider') {
-    const ammoKind = r < 0.45 ? 'rifle' : r < 0.78 ? 'shotgun' : 'pistol';
-    const base = ammoKind === 'rifle' ? 20 : ammoKind === 'shotgun' ? 8 : 14;
+    const ammoKind = r < 0.08 ? 'sniper' : r < 0.45 ? 'rifle' : r < 0.78 ? 'shotgun' : 'pistol';
+    const base = ammoKind === 'sniper' ? 6 : ammoKind === 'rifle' ? 20 : ammoKind === 'shotgun' ? 8 : 14;
     return {
       ammoKind,
       amount: Math.max(4, Math.round(base * yld)),
@@ -195,6 +195,12 @@ export function computeScopeFov(weaponId, scoped, zoomStep = 0) {
   if (!scoped || weaponId === 'fists' || weaponId === 'grenade') {
     return { fov: 72, spreadMult: 1, sensMult: 1, zoomLabel: '1.0x' };
   }
+  if (weaponId === 'sniper') {
+    if (zoomStep >= 1) {
+      return { fov: 9, spreadMult: 0.035, sensMult: 0.2, zoomLabel: '10x' };
+    }
+    return { fov: 14, spreadMult: 0.06, sensMult: 0.28, zoomLabel: '6x' };
+  }
   if (weaponId === 'rifle') {
     if (zoomStep >= 1) {
       return { fov: 24, spreadMult: 0.28, sensMult: 0.62, zoomLabel: '3.0x' };
@@ -205,6 +211,12 @@ export function computeScopeFov(weaponId, scoped, zoomStep = 0) {
     return { fov: 48, spreadMult: 0.48, sensMult: 0.86, zoomLabel: '1.5x' };
   }
   return { fov: 52, spreadMult: 0.72, sensMult: 0.88, zoomLabel: '1.4x' };
+}
+
+// Aim-assist cone widens with distance so distant silhouettes are easier to track and hit.
+export function aimAssistCone(distance) {
+  const d = Math.max(0, Number.isFinite(distance) ? distance : 0);
+  return 0.045 + Math.min(0.1, d * 0.00085);
 }
 
 export function computeRagdollImpulse(hitDir = null, damage = 30, isHead = false) {

@@ -12,6 +12,16 @@ function m(color, rough = 0.85, metal = 0) {
   return (matCache[k] ||= new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal }));
 }
 
+const bloodPatchMat = new THREE.MeshBasicMaterial({
+  color: 0x5a0707,
+  transparent: true,
+  opacity: 0.9,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  polygonOffset: true,
+  polygonOffsetFactor: -4,
+});
+
 const SKIN = [0xe0b394, 0xc68863, 0x8d5524, 0xf1c27d, 0x6b4226];
 const SHIRTS = [0x8a2b2b, 0x2b4a8a, 0x3d6b3d, 0xb5a27a, 0x555555, 0x7a4e8a, 0xc8c8c8, 0x9a6a2a];
 
@@ -33,9 +43,14 @@ export class Actor {
   group = new THREE.Group();
   body = new THREE.Group();
   headPivot = null;
+  torso = null;
   hit = [];
   legs = [];
+  knees = [];
   arms = [];
+  elbows = [];
+  bloodHits = 0;
+  buildScale = 1;
   health;
   speed;
   runSpeed;
@@ -102,61 +117,174 @@ export class Actor {
   }
 
   buildHuman() {
-    const skin = m(SKIN[Math.floor(Math.random() * SKIN.length)], 0.7);
-    let shirt, pants;
-    let hat = null;
+    const tone = SKIN[Math.floor(Math.random() * SKIN.length)];
+    const skin = m(tone, 0.68);
+    const hair = m([0x1b1512, 0x35251a, 0x5a4430, 0x8a6a45, 0x2b2b2b, 0x9a9a9a][Math.floor(Math.random() * 6)], 0.92);
+    let shirt, pants, outer = null, hat = null;
     if (this.kind === 'police') {
       shirt = m(0x1c2a4a, 0.8);
       pants = m(0x111827, 0.8);
-      hat = m(0x0f172a, 0.6);
+      hat = m(0x0f172a, 0.55);
     } else if (this.kind === 'raider') {
       shirt = m([0x3b3127, 0x2a2a2a, 0x4a4a32][Math.floor(Math.random() * 3)], 0.95);
       pants = m(0x2b2b26, 0.95);
+      outer = m(0x1c1a16, 0.96);
     } else {
       shirt = m(SHIRTS[Math.floor(Math.random() * SHIRTS.length)], 0.85);
       pants = m([0x2c3e5c, 0x3a3a3a, 0x5a4a3a][Math.floor(Math.random() * 3)], 0.9);
+      if (Math.random() < 0.45) outer = shirt;
     }
-    this.legs.push(this.limb(0.17, 0.86, 0.2, pants, -0.12, 0.88, 0));
-    this.legs.push(this.limb(0.17, 0.86, 0.2, pants, 0.12, 0.88, 0));
-    const torso = new THREE.Mesh(g('torso', () => new THREE.BoxGeometry(0.48, 0.64, 0.26)), shirt);
-    torso.position.y = 1.2;
-    this.body.add(torso);
-    this.hit.push(torso);
-    this.arms.push(this.limb(0.13, 0.66, 0.15, shirt, -0.31, 1.48, 0));
-    this.arms.push(this.limb(0.13, 0.66, 0.15, shirt, 0.31, 1.48, 0));
+    const bootMat = m(0x241c16, 0.9);
+    const beltMat = m(0x1a1612, 0.7, 0.15);
+    this.buildScale = 0.93 + Math.random() * 0.13;
+    this.body.scale.setScalar(this.buildScale);
 
-    // Articulated head pivot so head snaps & lolls naturally during ragdoll collapse
+    const hips = new THREE.Mesh(g('hips', () => new THREE.BoxGeometry(0.36, 0.16, 0.24)), pants);
+    hips.position.y = 0.92;
+    this.body.add(hips);
+    this.hit.push(hips);
+
+    // Two-segment legs with knees and proper boots
+    for (const sx of [-1, 1]) {
+      const thigh = new THREE.Group();
+      thigh.position.set(sx * 0.11, 0.94, 0);
+      const thighMesh = new THREE.Mesh(g('thigh', () => new THREE.BoxGeometry(0.155, 0.44, 0.18)), pants);
+      thighMesh.position.y = -0.22;
+      thigh.add(thighMesh);
+      this.hit.push(thighMesh);
+      const knee = new THREE.Group();
+      knee.position.y = -0.44;
+      thigh.add(knee);
+      const shin = new THREE.Mesh(g('shin', () => new THREE.BoxGeometry(0.135, 0.4, 0.16)), pants);
+      shin.position.y = -0.2;
+      knee.add(shin);
+      this.hit.push(shin);
+      const boot = new THREE.Mesh(g('boot', () => new THREE.BoxGeometry(0.16, 0.12, 0.27)), bootMat);
+      boot.position.set(0, -0.455, 0.045);
+      knee.add(boot);
+      this.hit.push(boot);
+      this.body.add(thigh);
+      this.legs.push(thigh);
+      this.knees.push(knee);
+    }
+
+    // Tailored torso stack: waist, chest, shoulders, belt, buckle & collar
+    this.torso = new THREE.Mesh(g('torsoReal', () => new THREE.BoxGeometry(0.44, 0.6, 0.25)), shirt);
+    this.torso.position.y = 1.24;
+    this.body.add(this.torso);
+    this.hit.push(this.torso);
+    const chest = new THREE.Mesh(g('chest', () => new THREE.BoxGeometry(0.5, 0.22, 0.27)), outer || shirt);
+    chest.position.y = 1.48;
+    this.body.add(chest);
+    this.hit.push(chest);
+    const belt = new THREE.Mesh(g('belt', () => new THREE.BoxGeometry(0.46, 0.06, 0.27)), beltMat);
+    belt.position.y = 1.02;
+    const buckle = new THREE.Mesh(g('buckle', () => new THREE.BoxGeometry(0.07, 0.05, 0.02)), m(0xb08d3a, 0.3, 0.85));
+    buckle.position.set(0, 1.02, 0.14);
+    this.body.add(belt, buckle);
+    const collar = new THREE.Mesh(g('collar', () => new THREE.BoxGeometry(0.28, 0.06, 0.2)), outer || shirt);
+    collar.position.y = 1.59;
+    this.body.add(collar);
+    if (this.kind !== 'police' && Math.random() < 0.3) {
+      const pack = new THREE.Mesh(g('pack', () => new THREE.BoxGeometry(0.3, 0.34, 0.14)), m(0x2f2a22, 0.95));
+      pack.position.set(0, 1.34, -0.2);
+      this.body.add(pack);
+    }
+
+    // Neck and two-segment arms with hands
+    const neck = new THREE.Mesh(g('neck', () => new THREE.CylinderGeometry(0.055, 0.06, 0.1, 8)), skin);
+    neck.position.y = 1.6;
+    this.body.add(neck);
+    for (const sx of [-1, 1]) {
+      const shoulder = new THREE.Group();
+      shoulder.position.set(sx * 0.27, 1.5, 0);
+      const upper = new THREE.Mesh(g('upperArm', () => new THREE.BoxGeometry(0.115, 0.32, 0.14)), shirt);
+      upper.position.y = -0.16;
+      shoulder.add(upper);
+      this.hit.push(upper);
+      const elbow = new THREE.Group();
+      elbow.position.y = -0.32;
+      shoulder.add(elbow);
+      const fore = new THREE.Mesh(
+        g('forearm', () => new THREE.BoxGeometry(0.1, 0.3, 0.12)),
+        this.kind === 'raider' || this.kind === 'police' ? shirt : skin,
+      );
+      fore.position.y = -0.15;
+      elbow.add(fore);
+      this.hit.push(fore);
+      const hand = new THREE.Mesh(g('hand', () => new THREE.BoxGeometry(0.095, 0.11, 0.1)), skin);
+      hand.position.y = -0.34;
+      elbow.add(hand);
+      this.hit.push(hand);
+      this.body.add(shoulder);
+      this.arms.push(shoulder);
+      this.elbows.push(elbow);
+    }
+
+    // Articulated head with facial structure, hair and eyes
     this.headPivot = new THREE.Group();
-    this.headPivot.position.set(0, 1.56, 0);
+    this.headPivot.position.set(0, 1.63, 0);
     this.body.add(this.headPivot);
 
     const head = new THREE.Mesh(
-      g('head', () => new THREE.SphereGeometry(0.13, 16, 12)),
+      g('head', () => new THREE.SphereGeometry(0.128, 16, 12)),
       this.kind === 'raider' ? m(0x1a1a1a, 0.6) : skin,
     );
-    head.position.y = 0.12;
-    head.scale.y = 1.15;
+    head.position.y = 0.1;
+    head.scale.set(0.96, 1.14, 1.02);
     head.userData.head = true;
     this.headPivot.add(head);
     this.hit.push(head);
+
+    const jaw = new THREE.Mesh(g('jaw', () => new THREE.BoxGeometry(0.14, 0.09, 0.15)), this.kind === 'raider' ? m(0x1a1a1a, 0.6) : skin);
+    jaw.position.set(0, 0.02, 0.015);
+    this.headPivot.add(jaw);
+    this.hit.push(jaw);
+    const nose = new THREE.Mesh(g('nose', () => new THREE.ConeGeometry(0.024, 0.06, 6)), skin);
+    nose.rotation.x = Math.PI / 2;
+    nose.position.set(0, 0.095, 0.135);
+    this.headPivot.add(nose);
+
+    if (this.kind !== 'raider') {
+      const eyeMat = m(0x171210, 0.35);
+      for (const sx of [-0.042, 0.042]) {
+        const eye = new THREE.Mesh(g('eye', () => new THREE.SphereGeometry(0.016, 8, 6)), eyeMat);
+        eye.position.set(sx, 0.132, 0.123);
+        this.headPivot.add(eye);
+      }
+      for (const sx of [-0.125, 0.125]) {
+        const ear = new THREE.Mesh(g('ear', () => new THREE.SphereGeometry(0.024, 8, 6)), skin);
+        ear.position.set(sx, 0.11, 0);
+        ear.scale.set(0.7, 1, 0.5);
+        this.headPivot.add(ear);
+      }
+      const hairCap = new THREE.Mesh(g('hair', () => new THREE.SphereGeometry(0.132, 14, 10)), hair);
+      hairCap.position.set(0, 0.145, -0.012);
+      hairCap.scale.set(1, 0.62, 1.02);
+      this.headPivot.add(hairCap);
+    }
+
     if (hat) {
-      const cap = new THREE.Mesh(g('cap', () => new THREE.CylinderGeometry(0.15, 0.15, 0.08, 16)), hat);
-      cap.position.y = 0.26;
+      const cap = new THREE.Mesh(g('cap', () => new THREE.CylinderGeometry(0.15, 0.155, 0.09, 16)), hat);
+      cap.position.y = 0.215;
       this.headPivot.add(cap);
+      const visor = new THREE.Mesh(g('visor', () => new THREE.BoxGeometry(0.2, 0.02, 0.08)), hat);
+      visor.position.set(0, 0.19, 0.11);
+      this.headPivot.add(visor);
       const badge = new THREE.Mesh(g('badge', () => new THREE.BoxGeometry(0.06, 0.07, 0.02)), m(0xd4af37, 0.3, 0.9));
-      badge.position.set(0.12, 1.36, 0.14);
+      badge.position.set(0.12, 1.4, 0.145);
       this.body.add(badge);
     }
     if (this.kind === 'raider') {
       const lensM = new THREE.MeshStandardMaterial({ color: 0x223322, emissive: 0x335533, roughness: 0.2 });
       for (const sx of [-0.05, 0.05]) {
         const lens = new THREE.Mesh(g('lens', () => new THREE.CircleGeometry(0.035, 12)), lensM);
-        lens.position.set(sx, 0.15, 0.135);
+        lens.position.set(sx, 0.16, 0.142);
         this.headPivot.add(lens);
       }
       const filt = new THREE.Mesh(g('filt', () => new THREE.CylinderGeometry(0.04, 0.05, 0.08, 10)), m(0x3a3a3a, 0.5, 0.5));
       filt.rotation.x = Math.PI / 2;
-      filt.position.set(0, 0.04, 0.16);
+      filt.position.set(0, 0.05, 0.165);
       this.headPivot.add(filt);
     }
     if (this.armed) {
@@ -213,6 +341,21 @@ export class Actor {
       [0.13, -0.38],
     ]) {
       this.legs.push(this.limb(0.09, 0.55, 0.1, fur, x, 0.55, z));
+    }
+  }
+
+  addBloodHit(isHead = false) {
+    if (this.kind === 'wolf' || this.bloodHits >= 5) return;
+    this.bloodHits++;
+    const patch = new THREE.Mesh(g('bloodPatch', () => new THREE.CircleGeometry(1, 8)), bloodPatchMat);
+    patch.scale.setScalar(0.022 + Math.random() * 0.05);
+    if (isHead && this.headPivot) {
+      patch.position.set((Math.random() - 0.5) * 0.1, 0.1 + (Math.random() - 0.5) * 0.1, 0.131);
+      this.headPivot.add(patch);
+    } else if (this.torso) {
+      patch.position.set((Math.random() - 0.5) * 0.34, (Math.random() - 0.45) * 0.44, 0.128);
+      patch.rotation.z = Math.random() * Math.PI;
+      this.torso.add(patch);
     }
   }
 
@@ -316,6 +459,12 @@ export class Actor {
             this.headPivot.rotation.x = e * rg.headX;
             this.headPivot.rotation.z = e * rg.headZ;
           }
+          this.knees.forEach((kn, i) => {
+            kn.rotation.x = e * (0.45 + (i === 0 ? -0.25 : 0.3));
+          });
+          this.elbows.forEach((el, i) => {
+            el.rotation.x = e * (i === 0 ? -1.15 : -0.85);
+          });
         }
         if (this.deathT >= 1 && p.y <= floorY + 0.02 && Math.hypot(rg.vx, rg.vz) < 0.08) {
           rg.settled = true;
@@ -435,10 +584,33 @@ export class Actor {
     this.legs.forEach((l, i) => {
       l.rotation.x = Math.sin(this.walkPhase + (i % 2 === 0 ? 0 : Math.PI) + (i > 1 ? Math.PI : 0)) * amp;
     });
+    this.knees.forEach((kn, i) => {
+      const swing = Math.sin(this.walkPhase + (i % 2 === 0 ? 0 : Math.PI));
+      kn.rotation.x = Math.max(0, -swing) * amp * 1.2;
+    });
     if (this.arms.length) {
       const aiming = hostile && this.armed && moveSpeed < 1.5;
       this.arms[0].rotation.x = aiming ? -1.2 : -Math.sin(this.walkPhase) * amp;
       this.arms[1].rotation.x = aiming ? -1.45 : Math.sin(this.walkPhase) * amp;
+      this.elbows.forEach((el, i) => {
+        el.rotation.x = aiming ? (i === 0 ? -1.05 : -1.2) : -0.12 - Math.max(0, Math.sin(this.walkPhase + (i === 0 ? 0 : Math.PI))) * amp * 0.4;
+      });
+    }
+
+    // Idle breathing, subtle weight shift and head tracking toward nearby people
+    if (this.torso) {
+      const t = performance.now() * 0.001;
+      this.torso.scale.y = 1 + Math.sin(t * 1.5 + this.id) * 0.012;
+      if (this.headPivot) {
+        let look = 0;
+        if (!hostile && dist < 22) {
+          let rel = Math.atan2(_toP.x, _toP.z) - this.group.rotation.y;
+          while (rel > Math.PI) rel -= Math.PI * 2;
+          while (rel < -Math.PI) rel += Math.PI * 2;
+          look = Math.max(-0.75, Math.min(0.75, rel));
+        }
+        this.headPivot.rotation.y += (look - this.headPivot.rotation.y) * Math.min(1, dt * 3.5);
+      }
     }
   }
 }

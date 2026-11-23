@@ -182,201 +182,308 @@ function cached(key, fn) {
   return cache.get(key);
 }
 
-// ---------- Building Facade PBR (8 Unique Architectural Styles + Mirror-Gloss Window RoughnessMap) ----------
+// ---------- Building Facade PBR (8 Unique Architectural Styles + Glossy Glazing) ----------
 export function facadePBR(style) {
   return cached('facadePBR' + style, () => {
-    const S = 256;
+    const S = 512;
     const [c, ctx] = makeCanvas(S, S);
     const [ec, ectx] = makeCanvas(S, S);
     const hmap = new Float32Array(S * S);
     const rmap = new Float32Array(S * S);
     const rnd = mulberry32(100 + style * 37);
+    const hash2 = (a, b) => {
+      const t = Math.sin(a * 127.1 + b * 311.7) * 43758.5453123;
+      return t - Math.floor(t);
+    };
 
     const palettes = [
-      { base: '#783c2d', trim: '#c7b8a3', kind: 'brick', glass: '#1a2f44', mullion: '#2a221d', litProb: 0.28 },
-      { base: '#b0a695', trim: '#d6cec0', kind: 'deco', glass: '#1c2b3a', mullion: '#47433c', litProb: 0.32 },
-      { base: '#3d4c5c', trim: '#607385', kind: 'curtain', glass: '#1e3a52', mullion: '#1e2730', litProb: 0.36 },
-      { base: '#967c5a', trim: '#c8b698', kind: 'brick', glass: '#192938', mullion: '#2c2621', litProb: 0.24 },
-      { base: '#444649', trim: '#6a6e74', kind: 'metal', glass: '#1b2632', mullion: '#14171a', litProb: 0.22 },
-      { base: '#49636a', trim: '#84a1a8', kind: 'curtain', glass: '#183842', mullion: '#253338', litProb: 0.34 },
-      { base: '#8a4a36', trim: '#e0d2ba', kind: 'terracotta', glass: '#203245', mullion: '#3a2c24', litProb: 0.26 },
-      { base: '#6e6a64', trim: '#98938b', kind: 'ribbon', glass: '#1b2b3b', mullion: '#22262b', litProb: 0.3 },
+      { base: '#7b3f2e', trim: '#cbbaa3', dark: '#3c2018', kind: 'brick', glass: '#17293b', mullion: '#241d18', litProb: 0.27 },
+      { base: '#b3a794', trim: '#e0d6c7', dark: '#6d6252', kind: 'deco', glass: '#182737', mullion: '#4a463f', litProb: 0.33 },
+      { base: '#3b4b5c', trim: '#657a8e', dark: '#1d2731', kind: 'curtain', glass: '#1b3651', mullion: '#161e26', litProb: 0.38 },
+      { base: '#957a55', trim: '#cdb995', dark: '#4a3925', kind: 'brick', glass: '#162534', mullion: '#2a241e', litProb: 0.23 },
+      { base: '#45484c', trim: '#757a81', dark: '#202328', kind: 'metal', glass: '#18222d', mullion: '#111417', litProb: 0.2 },
+      { base: '#48626b', trim: '#8aa8af', dark: '#21333a', kind: 'curtain', glass: '#143039', mullion: '#1f2c31', litProb: 0.34 },
+      { base: '#8b4b36', trim: '#e3d5bc', dark: '#44241a', kind: 'terracotta', glass: '#1d2f42', mullion: '#35271f', litProb: 0.25 },
+      { base: '#6d6a63', trim: '#9e9890', dark: '#393732', kind: 'ribbon', glass: '#19293a', mullion: '#20242a', litProb: 0.3 },
     ];
     const pal = palettes[style % palettes.length];
-    ctx.fillStyle = pal.base;
-    ctx.fillRect(0, 0, S, S);
-    ectx.fillStyle = '#000000';
-    ectx.fillRect(0, 0, S, S);
+    const hex = parseInt(pal.base.slice(1), 16);
+    const br = (hex >> 16) & 255;
+    const bg = (hex >> 8) & 255;
+    const bb = hex & 255;
 
-    // Underlying masonry / architectural cladding grain
-    const img = ctx.getImageData(0, 0, S, S);
+    // ---- Base masonry/cladding pass: grain, brick variance, soot & weather ----
+    const img = ctx.createImageData(S, S);
+    const brickW = 64;
+    const brickH = 22;
     for (let y = 0; y < S; y++) {
+      const v = y / S;
       for (let x = 0; x < S; x++) {
         const u = x / S;
-        const v = y / S;
-        const n = tileFbm(u, v, 8, 4);
+        const n = tileFbm(u, v, 9, 4);
+        const micro = hash2(x * 0.73, y * 1.17);
+        let shade = 0.82 + n * 0.28 + (micro - 0.5) * 0.08;
+        if (pal.kind === 'brick' || pal.kind === 'terracotta') {
+          const row = Math.floor(y / brickH);
+          const offset = row % 2 ? brickW / 2 : 0;
+          const bx = (x + offset) % brickW;
+          const by = y % brickH;
+          const vary = hash2(Math.floor((x + offset) / brickW) + 1.3, row * 1.7);
+          shade *= 0.83 + vary * 0.32;
+          if (bx < 2 || by < 2) {
+            shade *= 0.5;
+            hmap[y * S + x] = 0.16;
+          } else {
+            hmap[y * S + x] = 0.48 + vary * 0.14;
+          }
+        } else if (pal.kind === 'deco') {
+          const flute = Math.abs(Math.sin((u * 40 + n * 0.5) * Math.PI)) * 0.05;
+          shade *= 0.92 + flute;
+          hmap[y * S + x] = 0.5 + flute * 3.2;
+        } else if (pal.kind === 'metal') {
+          const rib = Math.sin(u * Math.PI * 72) * 0.5 + 0.5;
+          shade *= 0.82 + rib * 0.22;
+          hmap[y * S + x] = 0.26 + rib * 0.56;
+        } else {
+          hmap[y * S + x] = 0.55 + n * 0.16;
+        }
+        const soot = Math.max(0, v - 0.7) * 0.42 + Math.max(0, 0.16 - v) * 0.3;
+        shade *= 1 - soot * 0.85;
         const idx = (y * S + x) * 4;
-        const shade = pal.kind === 'curtain' ? 0.88 + n * 0.22 : 0.78 + n * 0.42;
-        img.data[idx] = Math.min(255, img.data[idx] * shade);
-        img.data[idx + 1] = Math.min(255, img.data[idx + 1] * shade);
-        img.data[idx + 2] = Math.min(255, img.data[idx + 2] * shade);
-        hmap[y * S + x] = 0.56 + n * 0.2;
-        rmap[y * S + x] = pal.kind === 'metal' || pal.kind === 'curtain' ? 0.44 + (1 - n) * 0.16 : 0.84 + (1 - n) * 0.12;
+        img.data[idx] = Math.max(12, Math.min(255, br * shade));
+        img.data[idx + 1] = Math.max(12, Math.min(255, bg * shade));
+        img.data[idx + 2] = Math.max(12, Math.min(255, bb * shade));
+        img.data[idx + 3] = 255;
+        rmap[y * S + x] = pal.kind === 'metal' ? 0.42 + (1 - n) * 0.2 : 0.86 + (1 - n) * 0.1;
       }
     }
     ctx.putImageData(img, 0, 0);
+    ectx.fillStyle = '#000000';
+    ectx.fillRect(0, 0, S, S);
 
-    // Architectural cladding geometry (Brick courses, Art Deco flutes, Ribbon spandrels, Corrugated metal)
-    if (pal.kind === 'brick' || pal.kind === 'terracotta') {
-      ctx.strokeStyle = 'rgba(26,15,10,0.45)';
-      ctx.lineWidth = 1;
-      for (let y = 0; y < S; y += 8) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(S, y);
-        ctx.stroke();
-        const off = (y / 8) % 2 === 0 ? 0 : 12;
-        for (let x = off; x < S; x += 24) {
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x, y + 8);
-          ctx.stroke();
-        }
-        for (let x = 0; x < S; x++) hmap[y * S + x] -= 0.14;
-      }
-    } else if (pal.kind === 'deco') {
+    // Continuous stone floor bands, cornice ledges & pilasters
+    for (let fy = 0; fy < 4; fy++) {
+      const y0 = fy * 128;
       ctx.fillStyle = pal.trim;
-      for (let fx = 0; fx < 4; fx++) {
-        ctx.fillRect(fx * 64 + 2, 0, 6, S);
-        ctx.fillRect(fx * 64 + 56, 0, 6, S);
-      }
-      for (let y = 0; y < S; y += 64) {
-        ctx.fillStyle = 'rgba(255,250,240,0.28)';
-        ctx.fillRect(0, y, S, 4);
-      }
-    } else if (pal.kind === 'curtain') {
-      ctx.fillStyle = pal.trim;
-      for (let y = 0; y < S; y += 64) {
-        ctx.fillRect(0, y, S, 10);
-        for (let x = 0; x < S; x++) {
-          for (let dy = 0; dy < 10; dy++) rmap[((y + dy) % S) * S + x] = 0.28;
-        }
-      }
-    } else if (pal.kind === 'metal') {
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      for (let x = 0; x < S; x += 12) ctx.fillRect(x, 0, 2, S);
-      for (let y = 0; y < S; y += 64) {
-        ctx.fillStyle = pal.trim;
-        ctx.fillRect(0, y, S, 5);
-      }
-    } else {
-      ctx.strokeStyle = 'rgba(20,20,20,0.32)';
-      ctx.lineWidth = 2;
-      for (let y = 0; y < S; y += 64) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(S, y);
-        ctx.stroke();
-        for (let x = 0; x < S; x++) hmap[y * S + x] -= 0.18;
+      ctx.globalAlpha = 0.58;
+      ctx.fillRect(0, y0, S, 7);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(18,16,14,0.38)';
+      ctx.fillRect(0, y0 + 7, S, 4);
+      for (let x = 0; x < S; x++) {
+        for (let dy = 0; dy < 7; dy++) hmap[(y0 + dy) * S + x] = 0.94;
+        for (let dy = 7; dy < 11; dy++) hmap[(y0 + dy) * S + x] -= 0.2;
       }
     }
-
-    // Horizontal stone/cornice bands & subtle rainwater streaks
-    for (let y = 60; y < S; y += 64) {
+    if (pal.kind === 'deco' || pal.kind === 'ribbon') {
       ctx.fillStyle = pal.trim;
-      ctx.globalAlpha = 0.38;
-      ctx.fillRect(0, y, S, 3);
+      ctx.globalAlpha = 0.26;
+      for (let x = 0; x < S; x += 128) ctx.fillRect(x + 6, 0, 8, S);
       ctx.globalAlpha = 1;
     }
-    for (let i = 0; i < 120; i++) {
-      const gx = rnd() * S;
-      const gy = rnd() * S;
-      const gh = 8 + rnd() * 28;
-      const gr = ctx.createLinearGradient(gx, gy, gx, gy + gh);
-      gr.addColorStop(0, 'rgba(15,14,12,0.22)');
-      gr.addColorStop(1, 'rgba(15,14,12,0)');
-      ctx.fillStyle = gr;
-      ctx.fillRect(gx, gy, 2 + rnd() * 3, gh);
+
+    // Downpipes / conduits & fire-escape anchor plates
+    const pipeXs = style % 2 === 0 ? [S * 0.19, S * 0.81] : [S * 0.065, S * 0.935];
+    for (const px of pipeXs) {
+      ctx.fillStyle = 'rgba(24,22,20,0.62)';
+      ctx.fillRect(px, 0, 3, S);
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.fillRect(px, 0, 1, S);
+      for (let py = 24; py < S; py += 96) {
+        ctx.fillStyle = 'rgba(24,22,20,0.5)';
+        ctx.fillRect(px - 5, py, 13, 3);
+      }
     }
 
-    // Reflective Glass Windows: 4 cols x 4 floors
+    // Rain/rust staining, cracks and weathered patches
+    for (let i = 0; i < 280; i++) {
+      const gx = rnd() * S;
+      const gy = rnd() * S;
+      const gh = 14 + rnd() * 74;
+      const grd = ctx.createLinearGradient(gx, gy, gx, gy + gh);
+      grd.addColorStop(0, pal.kind === 'metal' ? 'rgba(96,48,20,0.3)' : 'rgba(18,16,14,0.24)');
+      grd.addColorStop(1, 'rgba(18,16,14,0)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(gx, gy, 1.5 + rnd() * 4, gh);
+    }
+    ctx.strokeStyle = 'rgba(14,12,10,0.5)';
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 24; i++) {
+      let cx = rnd() * S;
+      let cy = rnd() * S;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      for (let k = 0; k < 7; k++) {
+        cx += (rnd() - 0.5) * 34;
+        cy += (rnd() - 0.2) * 34;
+        ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+    }
+
+    // Reflective glazing: 4 bays x 4 floors with stone surrounds, sills, frames & interiors
     for (let fy = 0; fy < 4; fy++) {
       for (let fx = 0; fx < 4; fx++) {
-        const w = pal.kind === 'curtain' ? 48 : pal.kind === 'ribbon' ? 52 : 38;
-        const h = pal.kind === 'curtain' ? 46 : pal.kind === 'ribbon' ? 32 : 38;
-        const x = fx * 64 + Math.floor((64 - w) / 2);
-        const y = fy * 64 + Math.floor((64 - h) / 2);
+        const cellX = fx * 128;
+        const cellY = fy * 128;
+        const w = pal.kind === 'curtain' ? 100 : pal.kind === 'ribbon' ? 112 : pal.kind === 'deco' ? 68 : 74;
+        const h = pal.kind === 'curtain' ? 84 : pal.kind === 'ribbon' ? 50 : pal.kind === 'deco' ? 88 : 78;
+        const x = cellX + Math.floor((128 - w) / 2);
+        const y = cellY + Math.floor((128 - h) / 2);
         const lit = rnd() < pal.litProb;
+        const variant = rnd();
 
-        // Recessed mullion surround & stone sill
-        ctx.fillStyle = pal.mullion;
-        ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
-        for (let py = Math.max(0, y - 3); py < Math.min(S, y + h + 3); py++) {
-          for (let px = Math.max(0, x - 3); px < Math.min(S, x + w + 3); px++) {
-            rmap[py * S + px] = 0.28;
-          }
-        }
+        // Stone surround, deep reveal, lintel and projecting sill
         ctx.fillStyle = pal.trim;
-        ctx.fillRect(x - 4, y + h + 1, w + 8, 4);
-        for (let py = Math.min(S - 1, y + h + 1); py < Math.min(S, y + h + 5); py++) {
-          for (let px = Math.max(0, x - 4); px < Math.min(S, x + w + 4); px++) {
-            hmap[py * S + px] = 0.92;
+        ctx.fillRect(x - 10, y - 10, w + 20, h + 20);
+        ctx.fillStyle = 'rgba(12,10,9,0.62)';
+        ctx.fillRect(x - 5, y - 5, w + 10, h + 10);
+        ctx.fillStyle = pal.trim;
+        ctx.fillRect(x - 14, y - 15, w + 28, 6);
+        ctx.fillRect(x - 16, y + h + 8, w + 32, 9);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillRect(x - 16, y + h + 8, w + 32, 2);
+        ctx.fillStyle = 'rgba(10,8,7,0.28)';
+        ctx.fillRect(x - 16, y + h + 17, w + 32, 5);
+        for (let py = Math.max(0, y - 15); py < Math.min(S, y - 9); py++) {
+          for (let px = Math.max(0, x - 14); px < Math.min(S, x + w + 14); px++) hmap[py * S + px] = 0.93;
+        }
+        for (let py = Math.max(0, y + h + 8); py < Math.min(S, y + h + 17); py++) {
+          for (let px = Math.max(0, x - 16); px < Math.min(S, x + w + 16); px++) {
+            hmap[py * S + px] = 0.98;
+            rmap[py * S + px] = 0.72;
           }
         }
 
-        // Crisp mirror-smooth glass roughness inside pane (reflects IBL sky/buildings!)
+        // Deep recessed glass with sky reflection
         for (let py = y; py < y + h; py++) {
           for (let px = x; px < x + w; px++) {
-            hmap[py * S + px] = 0.14;
+            hmap[py * S + px] = 0.12;
             rmap[py * S + px] = 0.05;
           }
         }
-
-        const g = ctx.createLinearGradient(x, y, x + w, y + h);
+        const g = ctx.createLinearGradient(x, y, x + w * 0.85, y + h);
         if (lit) {
-          g.addColorStop(0, '#ffe3ab');
-          g.addColorStop(0.55, '#d99846');
-          g.addColorStop(1, '#8c531c');
-          ectx.fillStyle = g;
-          ectx.fillRect(x, y, w, h);
+          const warm = ['#ffe6b4', '#ffd08b', '#e8a74f'][fx % 3];
+          g.addColorStop(0, warm);
+          g.addColorStop(0.55, '#c98a3e');
+          g.addColorStop(1, '#7e4b17');
         } else {
-          g.addColorStop(0, '#5a80a6');
+          g.addColorStop(0, '#6b93b8');
           g.addColorStop(0.42, pal.glass);
-          g.addColorStop(1, '#091018');
+          g.addColorStop(1, '#070d13');
         }
         ctx.fillStyle = g;
         ctx.fillRect(x, y, w, h);
 
-        // Specular diagonal sky reflection sheen + blinds on dark windows
-        if (!lit) {
-          ctx.fillStyle = 'rgba(180,218,255,0.22)';
+        if (lit) {
+          // Warm interior glow with blinds and a faint room silhouette
+          ectx.fillStyle = g;
+          ectx.fillRect(x, y, w, h);
+          if (variant < 0.55) {
+            const blinds = 6 + Math.floor(rnd() * 8);
+            const bh = Math.floor(h * 0.35);
+            ctx.fillStyle = 'rgba(38,24,12,0.4)';
+            ectx.fillStyle = 'rgba(0,0,0,0.5)';
+            for (let b = 0; b < blinds; b++) {
+              const by = y + Math.floor((b / blinds) * bh);
+              ctx.fillRect(x, by, w, 2);
+              ectx.fillRect(x, by, w, 2);
+            }
+          }
+          if (variant > 0.7) {
+            ctx.fillStyle = 'rgba(30,18,8,0.35)';
+            ectx.fillStyle = 'rgba(0,0,0,0.42)';
+            const sway = Math.floor(w * 0.34);
+            ctx.fillRect(x + Math.floor(w * 0.3), y + h - Math.floor(h * 0.52), sway, Math.floor(h * 0.52));
+            ectx.fillRect(x + Math.floor(w * 0.3), y + h - Math.floor(h * 0.52), sway, Math.floor(h * 0.52));
+          }
+        } else {
+          // Cool glass sheen + interior blinds/curtain silhouettes
+          ctx.fillStyle = 'rgba(186,222,255,0.22)';
           ctx.beginPath();
           ctx.moveTo(x + 2, y + 2);
-          ctx.lineTo(x + w * 0.65, y + 2);
-          ctx.lineTo(x + 2, y + h * 0.72);
+          ctx.lineTo(x + w * 0.7, y + 2);
+          ctx.lineTo(x + 2, y + h * 0.78);
           ctx.closePath();
           ctx.fill();
-        } else if (rnd() < 0.5) {
-          ctx.fillStyle = 'rgba(40,22,8,0.45)';
-          ctx.fillRect(x, y, w, 10);
-          ectx.fillStyle = 'rgba(0,0,0,0.55)';
-          ectx.fillRect(x, y, w, 10);
+          if (variant < 0.42) {
+            ctx.fillStyle = 'rgba(8,14,20,0.45)';
+            for (let b = 0; b < 7; b++) {
+              ctx.fillRect(x, y + Math.floor((b / 7) * h * 0.5), w, 2);
+            }
+          } else if (variant > 0.82) {
+            ctx.fillStyle = 'rgba(44,58,72,0.55)';
+            ctx.fillRect(x, y, Math.floor(w * 0.16), h);
+            ctx.fillRect(x + w - Math.floor(w * 0.16), y, Math.floor(w * 0.16), h);
+          }
+          if (variant > 0.92) {
+            // A single lit window with cold TV light
+            ectx.fillStyle = 'rgba(120,160,220,0.55)';
+            ectx.fillRect(x + Math.floor(w * 0.2), y + Math.floor(h * 0.35), Math.floor(w * 0.6), Math.floor(h * 0.5));
+          }
         }
 
-        // Cross mullions
+        // Window frame, mullions and sash bars
         ctx.fillStyle = pal.mullion;
+        ctx.fillRect(x - 3, y - 3, w + 6, 3);
+        ctx.fillRect(x - 3, y + h, w + 6, 3);
+        ctx.fillRect(x - 3, y - 3, 3, h + 6);
+        ctx.fillRect(x + w, y - 3, 3, h + 6);
         ctx.fillRect(x + Math.floor(w / 2) - 1, y, 2, h);
         ctx.fillRect(x, y + Math.floor(h / 2) - 1, w, 2);
         ectx.fillStyle = '#000000';
         ectx.fillRect(x + Math.floor(w / 2) - 1, y, 2, h);
         ectx.fillRect(x, y + Math.floor(h / 2) - 1, w, 2);
+        for (let py = y; py < y + h; py++) {
+          for (let px = x; px < x + w; px++) {
+            const onFrame = px < x + 3 || px > x + w - 4 || py < y + 3 || py > y + h - 4 || Math.abs(px - (x + w / 2)) < 2 || Math.abs(py - (y + h / 2)) < 2;
+            if (onFrame) {
+              hmap[py * S + px] = 0.62;
+              rmap[py * S + px] = 0.34;
+            }
+          }
+        }
+
+        // Occasional boards, broken pane or window AC unit
+        if (variant > 0.945) {
+          ctx.fillStyle = 'rgba(72,52,34,0.95)';
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y, w, h);
+          ctx.clip();
+          for (let b = 0; b < 3; b++) {
+            ctx.fillRect(x - 6, y + 10 + b * Math.floor(h / 3), w + 12, 7);
+          }
+          ctx.restore();
+          ectx.fillStyle = '#000000';
+          ectx.fillRect(x, y, w, h);
+        } else if (variant > 0.9) {
+          ctx.strokeStyle = 'rgba(210,235,255,0.65)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x + w * 0.3, y + 2);
+          ctx.lineTo(x + w * 0.55, y + h * 0.55);
+          ctx.lineTo(x + w * 0.4, y + h - 2);
+          ctx.moveTo(x + w * 0.55, y + h * 0.55);
+          ctx.lineTo(x + w * 0.85, y + h * 0.8);
+          ctx.stroke();
+        } else if (variant < 0.08 && pal.kind !== 'curtain') {
+          ctx.fillStyle = 'rgba(120,124,128,0.9)';
+          ctx.fillRect(x + Math.floor(w * 0.12), y + h + 9, Math.floor(w * 0.45), 18);
+          ctx.fillStyle = 'rgba(40,44,48,0.9)';
+          for (let r = 0; r < 3; r++) ctx.fillRect(x + Math.floor(w * 0.12), y + h + 12 + r * 5, Math.floor(w * 0.45), 2);
+          for (let py = y + h + 9; py < y + h + 27; py++) {
+            for (let px = x + Math.floor(w * 0.12); px < x + Math.floor(w * 0.12) + Math.floor(w * 0.45); px++) hmap[py * S + px] = 0.85;
+          }
+        }
       }
     }
 
     return {
       map: finishTex(c, true, true),
       emissiveMap: finishTex(ec, true, true),
-      normalMap: heightToNormalTex(hmap, S, S, 2.2, true),
+      normalMap: heightToNormalTex(hmap, S, S, 2.6, true),
       roughnessMap: grayToDataTex(rmap, S, S, true),
     };
   });
@@ -1366,10 +1473,12 @@ export function ammoBoxTexture(kind = 'rifle') {
         ? '#7f1d1d'
         : kind === 'pistol'
           ? '#1e3a5f'
-          : kind === 'grenade'
-            ? '#3f4d28'
-            : '#364526';
-    const band = kind === 'shotgun' ? '#f59e0b' : kind === 'pistol' ? '#60a5fa' : kind === 'grenade' ? '#ef4444' : '#facc15';
+          : kind === 'sniper'
+            ? '#33404a'
+            : kind === 'grenade'
+              ? '#3f4d28'
+              : '#364526';
+    const band = kind === 'shotgun' ? '#f59e0b' : kind === 'pistol' ? '#60a5fa' : kind === 'sniper' ? '#e2e8f0' : kind === 'grenade' ? '#ef4444' : '#facc15';
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, S, S);
     speckle(ctx, S, S, 550, 0.14);
@@ -1382,8 +1491,55 @@ export function ammoBoxTexture(kind = 'rifle') {
     ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const label = kind === 'shotgun' ? '12G' : kind === 'pistol' ? '9MM' : kind === 'grenade' ? 'FRAG' : '5.56';
+    const label = kind === 'shotgun' ? '12G' : kind === 'pistol' ? '9MM' : kind === 'sniper' ? '7.62' : kind === 'grenade' ? 'FRAG' : '5.56';
     ctx.fillText(label, S / 2, S / 2 + 1);
+    return finishTex(c, false, true);
+  });
+}
+
+// ---------- Blood FX textures ----------
+export function bloodDropTexture() {
+  return cached('bloodDrop', () => {
+    const S = 64;
+    const [c, ctx] = makeCanvas(S, S);
+    const g = ctx.createRadialGradient(32, 32, 1, 32, 32, 31);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.42, 'rgba(255,255,255,0.92)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(32, 32, 31, 0, Math.PI * 2);
+    ctx.fill();
+    return finishTex(c, false, true);
+  });
+}
+
+export function bloodSplatTexture() {
+  return cached('bloodSplat', () => {
+    const S = 256;
+    const [c, ctx] = makeCanvas(S, S);
+    const rnd = mulberry32(7717);
+    ctx.clearRect(0, 0, S, S);
+    ctx.fillStyle = 'rgba(88,6,6,0.95)';
+    for (let i = 0; i < 26; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = rnd() * 54;
+      const cx = 128 + Math.cos(a) * r;
+      const cy = 128 + Math.sin(a) * r;
+      const rad = 16 + rnd() * 34;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rad, rad * (0.55 + rnd() * 0.6), a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 80; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = 70 + rnd() * 52;
+      const cx = 128 + Math.cos(a) * r;
+      const cy = 128 + Math.sin(a) * r;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.5 + rnd() * 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     return finishTex(c, false, true);
   });
 }

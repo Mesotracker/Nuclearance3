@@ -12,9 +12,10 @@ const CONTROLS = [
   ['Shift / Space', 'Sprint / Jump'],
   ['Mouse', 'Aim / Fire'],
   ['F / Right-Click', 'Scope / ADS (+Wheel)'],
-  ['1-5', 'Weapons / Grenade'],
+  ['1-6', 'Weapons / Sniper / Grenade'],
   ['R / G', 'Reload / Frag'],
   ['E (hold)', 'Rob · Loot · Hack · Evac'],
+  ['E (at a car)', 'Hijack / Exit vehicle'],
   ['C / V', 'Eat Ration / Drink'],
   ['H / X', 'Medkit / Rad-X'],
   ['M / P', 'Field Guide / Pause'],
@@ -167,8 +168,8 @@ export default function App() {
       if (phase === 'shelter') {
         stats = applyBunkerSupplyBonus(stats, stats.bunkerTier);
       } else if (phase !== 'city') {
-        stats.weapons = ['fists', 'pistol', 'shotgun', 'rifle'];
-        stats.ammo = { pistol: 45, shotgun: 24, rifle: 72 };
+        stats.weapons = ['fists', 'pistol', 'shotgun', 'rifle', 'sniper'];
+        stats.ammo = { pistol: 45, shotgun: 24, rifle: 72, sniper: 10 };
       }
       startPhase(phase, stats, { autostart: true });
       const g = gameRef.current;

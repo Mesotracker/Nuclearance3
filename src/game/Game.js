@@ -7,6 +7,7 @@ import { buildCity } from './levels/city.js';
 import { buildWild } from './levels/wild.js';
 import { NukeCutscene } from './nuke.js';
 import {
+  aimAssistCone,
   clampDeltaTime,
   computeFallDamage,
   computeGrenadeFalloff,
@@ -18,6 +19,8 @@ import {
   stepSurvivalStats,
 } from './rules.js';
 import {
+  bloodDropTexture,
+  bloodSplatTexture,
   flakeTexture,
   footprintTexture,
   muzzleFlashTexture,
@@ -166,7 +169,7 @@ export class Game {
   eLatch = false;
 
   weapon = 'fists';
-  clips = { fists: 0, pistol: 0, shotgun: 0, rifle: 0, grenade: 0 };
+  clips = { fists: 0, pistol: 0, shotgun: 0, rifle: 0, sniper: 0, grenade: 0 };
   fireCd = 0;
   reloadT = 0;
   scoped = false;
@@ -177,6 +180,12 @@ export class Game {
   bobT = 0;
   muzzleLight;
   muzzleFlash;
+  vehicle = null;
+  vehSpeed = 0;
+  bloodDrops = null;
+  bloodMeta = [];
+  bloodDecals = [];
+  bloodHead = 0;
 
   actors = [];
   grenades = [];
@@ -335,6 +344,7 @@ export class Game {
     this.buildViewModels();
     this.camera.add(this.viewModel);
     this.initFootprints();
+    this.initBlood();
 
     this.bindInput();
     window.addEventListener('resize', this.onResize);
@@ -462,6 +472,9 @@ export class Game {
         this.switchWeapon('rifle');
         break;
       case 'Digit5':
+        this.switchWeapon('sniper');
+        break;
+      case 'Digit6':
         this.switchWeapon('grenade');
         break;
       case 'KeyG':
@@ -481,7 +494,7 @@ export class Game {
         this.onEvent({ type: 'toggleGuide' });
         break;
       case 'KeyF':
-        if ((this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle') && this.reloadT <= 0) {
+        if ((this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle' || this.weapon === 'sniper') && this.reloadT <= 0) {
           this.scoped = !this.scoped;
           audio.click();
           this.emitHud();
@@ -553,7 +566,7 @@ export class Game {
   onMouseDown = (e) => {
     if (e.button === 0) this.mouseDown = true;
     else if (e.button === 2 && this.mode === 'play') {
-      if ((this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle') && this.reloadT <= 0) {
+      if ((this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle' || this.weapon === 'sniper') && this.reloadT <= 0) {
         this.scoped = !this.scoped;
         audio.click();
         this.emitHud();
@@ -566,7 +579,7 @@ export class Game {
   };
 
   onWheel = (e) => {
-    if (this.mode !== 'play' || !this.scoped || this.weapon !== 'rifle') return;
+    if (this.mode !== 'play' || !this.scoped || (this.weapon !== 'rifle' && this.weapon !== 'sniper')) return;
     const next = e.deltaY < 0 ? 1 : 0;
     if (next !== this.scopeZoom) {
       this.scopeZoom = next;
@@ -753,6 +766,45 @@ export class Game {
       box(0.012, 0.022, 0.045, brassMetal, 0.135, -0.148, -0.33), // bolt carrier accent
     );
 
+    const sniper = new THREE.Group();
+    const snBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.014, 1.05, 12), gunMetal);
+    snBarrel.rotation.x = Math.PI / 2;
+    snBarrel.position.set(0.16, -0.15, -0.98);
+    const snBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.019, 0.1, 10), darkMetal);
+    snBrake.rotation.x = Math.PI / 2;
+    snBrake.position.set(0.16, -0.15, -1.55);
+    const snScope = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.46, 14), darkMetal);
+    snScope.rotation.x = Math.PI / 2;
+    snScope.position.set(0.16, -0.075, -0.5);
+    const snLensMat = new THREE.MeshStandardMaterial({
+      color: 0x1c3b52,
+      emissive: 0x2f7fa8,
+      emissiveIntensity: 0.6,
+      metalness: 0.9,
+      roughness: 0.06,
+    });
+    const snLens = new THREE.Mesh(new THREE.CircleGeometry(0.035, 16), snLensMat);
+    snLens.rotation.y = Math.PI;
+    snLens.position.set(0.16, -0.075, -0.735);
+    const snLensBack = new THREE.Mesh(new THREE.CircleGeometry(0.035, 16), snLensMat);
+    snLensBack.position.set(0.16, -0.075, -0.265);
+    sniper.add(
+      snBarrel,
+      snBrake,
+      snScope,
+      snLens,
+      snLensBack,
+      box(0.056, 0.085, 0.55, darkMetal, 0.16, -0.165, -0.32), // receiver
+      box(0.05, 0.1, 0.3, woodMat, 0.16, -0.19, 0.06), // walnut stock
+      box(0.036, 0.13, 0.06, gripMat, 0.16, -0.3, -0.24, 0.2), // magazine
+      box(0.042, 0.1, 0.055, gripMat, 0.16, -0.27, -0.12, 0.28), // pistol grip
+      box(0.024, 0.055, 0.03, darkMetal, 0.16, -0.035, -0.4), // scope ring
+      box(0.024, 0.055, 0.03, darkMetal, 0.16, -0.035, -0.6), // scope ring
+      box(0.012, 0.012, 0.01, sightRed, 0.16, -0.073, -0.74), // illuminated reticle
+      box(0.01, 0.045, 0.01, brassMetal, 0.2, -0.13, -0.28), // bolt handle
+      box(0.06, 0.11, 0.12, glove, 0.16, -0.28, -0.16), // support hand
+    );
+
     const grenade = new THREE.Group();
     const gBody = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), oliveMetal);
     gBody.scale.set(1, 1.28, 1);
@@ -764,7 +816,7 @@ export class Game {
     const gHand = box(0.075, 0.075, 0.22, glove, 0.18, -0.24, -0.24);
     grenade.add(gBody, gNeck, gRing, gHand);
 
-    this.vmGuns = { fists, pistol, shotgun, rifle, grenade };
+    this.vmGuns = { fists, pistol, shotgun, rifle, sniper, grenade };
     for (const [k, grp] of Object.entries(this.vmGuns)) {
       grp.visible = k === 'fists';
       grp.traverse((o) => {
@@ -793,7 +845,7 @@ export class Game {
     this.scopeZoom = 0;
     this.fireCd = 0.1;
     for (const [k, grp] of Object.entries(this.vmGuns)) grp.visible = k === w;
-    const tipZ = { fists: -0.4, pistol: -0.54, shotgun: -1.0, rifle: -1.05, grenade: -0.4 };
+    const tipZ = { fists: -0.4, pistol: -0.54, shotgun: -1.0, rifle: -1.05, sniper: -1.6, grenade: -0.4 };
     this.muzzleFlash.position.z = tipZ[w];
     this.muzzleLight.position.z = tipZ[w] - 0.05;
     audio.click();
@@ -845,15 +897,17 @@ export class Game {
     this.camera.fov = 72;
     this.camera.updateProjectionMatrix();
     this.cutscene = null;
-    this.clips = { fists: 0, pistol: 0, shotgun: 0, rifle: 0, grenade: 0 };
-    for (const w of ['pistol', 'shotgun', 'rifle']) {
+    this.vehicle = null;
+    this.vehSpeed = 0;
+    this.clips = { fists: 0, pistol: 0, shotgun: 0, rifle: 0, sniper: 0, grenade: 0 };
+    for (const w of ['pistol', 'shotgun', 'rifle', 'sniper']) {
       if (stats.weapons.includes(w)) {
         const take = Math.min(WEAPONS[w].mag, stats.ammo[w]);
         this.clips[w] = take;
         stats.ammo[w] -= take;
       }
     }
-    const best = ['rifle', 'shotgun', 'pistol', 'fists'].find((w) => stats.weapons.includes(w));
+    const best = ['sniper', 'rifle', 'shotgun', 'pistol', 'fists'].find((w) => stats.weapons.includes(w));
     this.weapon = 'fists';
     for (const [k, grp] of Object.entries(this.vmGuns)) grp.visible = k === 'fists';
     this.switchWeapon(best);
@@ -929,6 +983,22 @@ export class Game {
     this.fireLights.forEach((l) => (l.intensity = 0));
     this.interiorLights.forEach((l) => (l.intensity = 0));
     this.level = null;
+    this.vehicle = null;
+    this.vehSpeed = 0;
+    for (const bd of this.bloodDecals) {
+      this.scene.remove(bd.mesh);
+      bd.mesh.geometry.dispose();
+      bd.mesh.material.dispose();
+    }
+    this.bloodDecals = [];
+    if (this.bloodDrops) {
+      const attr = this.bloodDrops.geometry.attributes.position;
+      for (let i = 0; i < this.bloodMeta.length; i++) {
+        this.bloodMeta[i].life = 0;
+        attr.setXYZ(i, 0, -999, 0);
+      }
+      attr.needsUpdate = true;
+    }
   }
 
   setEnv(o) {
@@ -985,7 +1055,7 @@ export class Game {
   }
 
   completePhase() {
-    for (const w of ['pistol', 'shotgun', 'rifle']) {
+    for (const w of ['pistol', 'shotgun', 'rifle', 'sniper']) {
       this.stats.ammo[w] += this.clips[w];
       this.clips[w] = 0;
     }
@@ -1095,6 +1165,7 @@ export class Game {
         for (const b of list) {
           if (seen.has(b)) continue;
           seen.add(b);
+          if (b.disabled) continue;
           if (b.minY !== undefined && p.y + 1.5 < b.minY) continue;
           if (b.maxY !== undefined && p.y >= b.maxY - 0.05) continue;
           const cx = Math.max(b.minX, Math.min(p.x, b.maxX));
@@ -1257,7 +1328,7 @@ export class Game {
 
   // ---------------- grenades & combat ----------------
   throwGrenade() {
-    if (this.mode !== 'play' || this.fireCd > 0) return;
+    if (this.mode !== 'play' || this.fireCd > 0 || this.vehicle) return;
     if ((this.stats.grenades ?? 0) <= 0) {
       this.msg('Out of frag grenades', 'info');
       return;
@@ -1342,6 +1413,8 @@ export class Game {
         const dir = a.pos.clone().sub(pos);
         if (dir.lengthSq() > 0.0001) dir.normalize();
         const killed = a.takeDamage(dmg, dir, false);
+        a.addBloodHit(false);
+        this.spawnBloodBurst(a.pos.clone().setY(a.pos.y + 1), dir, 2.2, false);
         if (killed) this.onKill(a);
       }
     }
@@ -1426,7 +1499,7 @@ export class Game {
 
   aimAssistDir(origin, fwd, range, strength) {
     let bestDir = null;
-    let bestAngle = 0.055;
+    let bestScore = -1;
     for (const a of this.actors) {
       if (a.dead || a.kind === 'civilian') continue;
       _aimTarget.set(a.pos.x, a.pos.y + (a.kind === 'wolf' ? 0.7 : 1.2), a.pos.z).sub(origin);
@@ -1434,13 +1507,38 @@ export class Game {
       if (dist < 0.5 || dist > range) continue;
       _aimTarget.multiplyScalar(1 / dist);
       const ang = _aimTarget.angleTo(fwd);
-      if (ang < bestAngle) {
-        bestAngle = ang;
-        bestDir = _aimTarget;
+      const tol = aimAssistCone(dist);
+      if (ang < tol) {
+        // Prefer targets close to the reticle; distant targets get a wider assist cone.
+        const score = 1 - ang / tol + Math.min(0.3, dist / range) * 0.3;
+        if (score > bestScore) {
+          bestScore = score;
+          bestDir = _aimTarget.clone();
+        }
       }
     }
     if (!bestDir) return fwd;
     return fwd.clone().lerp(bestDir, strength).normalize();
+  }
+
+  rangeUnderReticle() {
+    if (!this.level) return null;
+    const fwd = this.camera.getWorldDirection(new THREE.Vector3());
+    const cam = this.camera.position;
+    let best = null;
+    let bestAng = 0.085;
+    for (const a of this.actors) {
+      if (a.dead) continue;
+      _aimTarget.set(a.pos.x, a.pos.y + (a.kind === 'wolf' ? 0.7 : 1.25), a.pos.z).sub(cam);
+      const d = _aimTarget.length();
+      if (d < 2) continue;
+      const ang = _aimTarget.multiplyScalar(1 / d).angleTo(fwd);
+      if (ang < bestAng) {
+        bestAng = ang;
+        best = d;
+      }
+    }
+    return best;
   }
 
   fire() {
@@ -1461,21 +1559,21 @@ export class Game {
     }
     const mods = difficultyMods(this.stats);
     this.fireCd = w.rate;
-    this.recoil = w.id === 'shotgun' ? 0.85 : w.id === 'fists' ? 0.7 : w.id === 'rifle' ? 0.36 : 0.42;
+    this.recoil = w.id === 'shotgun' ? 0.85 : w.id === 'fists' ? 0.7 : w.id === 'sniper' ? 1.05 : w.id === 'rifle' ? 0.36 : 0.42;
     // Camera shake impulse per weapon when firing (kept light so aim stays on target)
-    const fireShake = w.id === 'shotgun' ? 0.5 : w.id === 'rifle' ? 0.2 : w.id === 'pistol' ? 0.16 : 0.11;
+    const fireShake = w.id === 'shotgun' ? 0.5 : w.id === 'sniper' ? 0.55 : w.id === 'rifle' ? 0.2 : w.id === 'pistol' ? 0.16 : 0.11;
     this.shake = Math.max(this.shake, fireShake);
-    const ads = this.scoped && this.reloadT <= 0 && (w.id === 'pistol' || w.id === 'shotgun' || w.id === 'rifle');
+    const ads = this.scoped && this.reloadT <= 0 && (w.id === 'pistol' || w.id === 'shotgun' || w.id === 'rifle' || w.id === 'sniper');
     if (w.id !== 'fists') {
       const kickScale = ads ? 0.65 : 1;
-      this.pitch += (w.id === 'shotgun' ? 0.028 : w.id === 'rifle' ? 0.009 : 0.011) * kickScale;
-      this.yaw += (Math.random() - 0.5) * (w.id === 'shotgun' ? 0.012 : 0.004) * kickScale;
-      this.muzzleLight.intensity = w.id === 'shotgun' ? 12 : 9;
-      this.muzzleFlashT = w.id === 'rifle' ? 0.055 : 0.075;
+      this.pitch += (w.id === 'shotgun' ? 0.028 : w.id === 'sniper' ? 0.05 : w.id === 'rifle' ? 0.009 : 0.011) * kickScale;
+      this.yaw += (Math.random() - 0.5) * (w.id === 'shotgun' ? 0.012 : w.id === 'sniper' ? 0.009 : 0.004) * kickScale;
+      this.muzzleLight.intensity = w.id === 'shotgun' ? 12 : w.id === 'sniper' ? 15 : 9;
+      this.muzzleFlashT = w.id === 'rifle' ? 0.055 : w.id === 'sniper' ? 0.07 : 0.075;
       this.muzzleFlash.visible = true;
       this.muzzleFlash.userData.mat.opacity = 1;
       this.muzzleFlash.rotation.z = Math.random() * Math.PI * 2;
-      const sc = (w.id === 'shotgun' ? 1.4 : w.id === 'rifle' ? 1.05 : 0.8) * (0.85 + Math.random() * 0.35);
+      const sc = (w.id === 'shotgun' ? 1.4 : w.id === 'sniper' ? 1.6 : w.id === 'rifle' ? 1.05 : 0.8) * (0.85 + Math.random() * 0.35);
       this.muzzleFlash.scale.set(sc, sc, 1.0 + Math.random() * 0.4);
       this.alarm = 8;
       audio.gunshot(w.id);
@@ -1505,7 +1603,7 @@ export class Game {
     const muzzle = this.muzzleFlash.getWorldPosition(new THREE.Vector3());
     const spreadMul = (this.moving ? 1.3 : 1) * computeScopeFov(w.id, ads, this.scopeZoom).spreadMult * mods.spread;
     // Soft aim assist: nudge the shot cone toward a hostile under the reticle (walls still block the ray)
-    const aimDir = this.aimAssistDir(origin, fwd, w.range, ads ? 0.55 : 0.3);
+    const aimDir = this.aimAssistDir(origin, fwd, w.range, ads ? (w.id === 'sniper' ? 0.8 : 0.62) : 0.34);
     const spread = w.spread * spreadMul;
     for (let i = 0; i < w.pellets; i++) {
       const dir = aimDir.clone();
@@ -1526,7 +1624,9 @@ export class Game {
         const head = !!hitA.object.userData.head;
         const falloff = w.id === 'shotgun' ? Math.max(0.3, 1 - hitA.distance / w.range) : 1;
         const killed = actor.takeDamage(w.damage * mods.playerDamage * (head ? 2.2 : 1) * falloff, dir, head);
-        this.puff(hitA.point, 0x7a0a0a, 0.35);
+        actor.addBloodHit(head);
+        this.spawnBloodBurst(hitA.point, dir, w.id === 'sniper' ? 2.4 : head ? 2 : 1.2, head);
+        this.puff(hitA.point, w.id === 'sniper' ? 0x8e0d0d : 0x7a0a0a, w.id === 'sniper' ? 0.6 : 0.35);
         if (killed) this.onKill(actor);
       } else if (hitW) {
         end = hitW.point;
@@ -1536,7 +1636,12 @@ export class Game {
         const geo = new THREE.BufferGeometry().setFromPoints([muzzle, end]);
         const line = new THREE.Line(
           geo,
-          new THREE.LineBasicMaterial({ color: 0xffe49e, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending }),
+          new THREE.LineBasicMaterial({
+            color: w.id === 'sniper' ? 0xfff4cf : 0xffe49e,
+            transparent: true,
+            opacity: w.id === 'sniper' ? 0.95 : 0.72,
+            blending: THREE.AdditiveBlending,
+          }),
         );
         this.scene.add(line);
         this.fx.push({ obj: line, life: 0.055, max: 0.055 });
@@ -1547,6 +1652,7 @@ export class Game {
 
   onKill(a) {
     this.stats.kills++;
+    this.spawnBloodPool(a.pos, a.kind === 'wolf' ? 1.0 : 0.82, a.kind === 'wolf' ? 1.4 : 1.1);
     if (a.kind === 'civilian') {
       this.stats.crimes++;
       this.wanted = Math.min(5, this.wanted + 1);
@@ -1595,7 +1701,14 @@ export class Game {
       }
     } else if (a.kind === 'raider') {
       const r = Math.random();
-      if (r < 0.4) {
+      if (r < 0.1) {
+        s.ammo.sniper += 6 + Math.floor(Math.random() * 6);
+        got.push('7.62 sniper rounds');
+        if (!s.weapons.includes('sniper') && Math.random() < 0.5) {
+          this.giveWeapon('sniper', 8);
+          got.push('M24 Sniper Rifle');
+        }
+      } else if (r < 0.42) {
         s.ammo.rifle += 24 + Math.floor(Math.random() * 18);
         got.push('5.56 rounds');
         if (!s.weapons.includes('rifle') && Math.random() < 0.55) {
@@ -1648,6 +1761,265 @@ export class Game {
     }
     audio.pickup();
     this.msg('Looted: ' + got.join(', '), 'loot');
+  }
+
+  // ---------------- blood FX ----------------
+  initBlood() {
+    const n = 300;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = 0;
+      pos[i * 3 + 1] = -999;
+      pos[i * 3 + 2] = 0;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+      map: bloodDropTexture(),
+      color: 0x9b1212,
+      size: 0.1,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.95,
+      sizeAttenuation: true,
+    });
+    this.bloodDrops = new THREE.Points(geo, mat);
+    this.bloodDrops.frustumCulled = false;
+    this.scene.add(this.bloodDrops);
+    for (let i = 0; i < n; i++) this.bloodMeta.push({ life: 0, max: 1, x: 0, y: -999, z: 0, vx: 0, vy: 0, vz: 0 });
+    this.bloodHead = 0;
+  }
+
+  spawnBloodBurst(point, dir, intensity = 1, isHead = false) {
+    if (!this.bloodDrops) return;
+    const attr = this.bloodDrops.geometry.attributes.position;
+    const meta = this.bloodMeta;
+    const count = Math.max(3, Math.min(20, Math.round(5 + intensity * 5)));
+    const dx = dir?.x ?? 0;
+    const dz = dir?.z ?? 0;
+    for (let k = 0; k < count; k++) {
+      const i = this.bloodHead;
+      this.bloodHead = (this.bloodHead + 1) % meta.length;
+      const m = meta[i];
+      m.life = m.max = 0.55 + Math.random() * 0.55;
+      m.x = point.x + (Math.random() - 0.5) * 0.16;
+      m.y = point.y + (Math.random() - 0.5) * 0.16;
+      m.z = point.z + (Math.random() - 0.5) * 0.16;
+      const spread = 1.4 + intensity * 0.8;
+      m.vx = dx * (1.4 + intensity) + (Math.random() - 0.5) * spread;
+      m.vy = 0.8 + Math.random() * (1.6 + intensity * 0.5) + (isHead ? 0.7 : 0);
+      m.vz = dz * (1.4 + intensity) + (Math.random() - 0.5) * spread;
+      attr.setXYZ(i, m.x, m.y, m.z);
+    }
+    attr.needsUpdate = true;
+  }
+
+  spawnBloodPool(pos, radius = 0.8, intensity = 1) {
+    if (!this.level) return;
+    const geo = new THREE.PlaneGeometry(radius * 2.2, radius * 2.2);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      map: bloodSplatTexture(),
+      color: 0x8a0d0d,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    const y = this.level.heightAt(pos.x, pos.z, pos.y) + 0.03;
+    mesh.position.set(pos.x + (Math.random() - 0.5) * 0.5, y, pos.z + (Math.random() - 0.5) * 0.5);
+    mesh.rotation.y = Math.random() * Math.PI * 2;
+    this.scene.add(mesh);
+    this.bloodDecals.push({ mesh, age: 0, life: 26 + Math.random() * 8, base: 0.68 + intensity * 0.12 });
+    while (this.bloodDecals.length > 40) {
+      const old = this.bloodDecals.shift();
+      this.scene.remove(old.mesh);
+      old.mesh.geometry.dispose();
+      old.mesh.material.dispose();
+    }
+  }
+
+  updateBlood(dt) {
+    if (this.bloodDrops) {
+      const attr = this.bloodDrops.geometry.attributes.position;
+      let dirty = false;
+      for (let i = 0; i < this.bloodMeta.length; i++) {
+        const m = this.bloodMeta[i];
+        if (m.life <= 0) continue;
+        m.life -= dt;
+        if (m.life <= 0) {
+          m.y = -999;
+          attr.setXYZ(i, 0, -999, 0);
+          dirty = true;
+          continue;
+        }
+        m.vy -= 12 * dt;
+        m.x += m.vx * dt;
+        m.y += m.vy * dt;
+        m.z += m.vz * dt;
+        const ground = this.level ? this.level.heightAt(m.x, m.z, m.y) : 0;
+        if (m.y < ground + 0.02) {
+          m.y = ground + 0.02;
+          m.vx *= 0.18;
+          m.vz *= 0.18;
+          m.vy = 0;
+        }
+        attr.setXYZ(i, m.x, m.y, m.z);
+        dirty = true;
+      }
+      if (dirty) attr.needsUpdate = true;
+    }
+    for (let i = this.bloodDecals.length - 1; i >= 0; i--) {
+      const bd = this.bloodDecals[i];
+      bd.age += dt;
+      const k = Math.max(0, Math.min(1, (bd.life - bd.age) / 4));
+      bd.mesh.material.opacity = bd.base * Math.min(1, bd.age * 3) * k;
+      if (bd.age >= bd.life) {
+        this.scene.remove(bd.mesh);
+        bd.mesh.geometry.dispose();
+        bd.mesh.material.dispose();
+        this.bloodDecals.splice(i, 1);
+      }
+    }
+  }
+
+  // ---------------- hijackable vehicles ----------------
+  enterVehicle(v) {
+    if (!v || !v.group || this.mode !== 'play' || this.vehicle) return;
+    this.vehicle = v;
+    this.vehSpeed = 0;
+    this.scoped = false;
+    this.scopeZoom = 0;
+    this.viewModel.visible = false;
+    this.mouseDown = false;
+    if (v.collider) v.collider.disabled = true;
+    const lvl = this.level;
+    if (lvl?.obstacles) {
+      const oi = lvl.obstacles.indexOf(v.group);
+      if (oi >= 0) lvl.obstacles.splice(oi, 1);
+      this.buildObstacleCache();
+    }
+    this.camera.fov = 76;
+    this.camera.updateProjectionMatrix();
+    this.alarm = Math.max(this.alarm, 3);
+    audio.click();
+    this.msg(v.police ? 'Police cruiser hotwired — drive with WASD, [E] to exit' : 'Car hotwired — drive with WASD, [E] to exit', 'loot');
+    this.emitHud();
+  }
+
+  exitVehicle() {
+    const v = this.vehicle;
+    if (!v) return;
+    const lvl = this.level;
+    const yaw = v.group.rotation.y;
+    this.vehicle = null;
+    this.vehSpeed = 0;
+    this.vel.set(0, 0, 0);
+    if (v.collider) {
+      const c = Math.abs(Math.cos(yaw));
+      const sn = Math.abs(Math.sin(yaw));
+      const hx = 1.05 * c + 2.15 * sn;
+      const hz = 2.15 * c + 1.05 * sn;
+      v.collider.minX = v.group.position.x - hx;
+      v.collider.maxX = v.group.position.x + hx;
+      v.collider.minZ = v.group.position.z - hz;
+      v.collider.maxZ = v.group.position.z + hz;
+      v.collider.disabled = false;
+    }
+    if (lvl?.obstacles && !lvl.obstacles.includes(v.group)) lvl.obstacles.push(v.group);
+    this.pos.set(v.group.position.x + Math.cos(yaw) * 2.25, 0, v.group.position.z - Math.sin(yaw) * 2.25);
+    if (lvl) {
+      this.pos.y = lvl.heightAt(this.pos.x, this.pos.z, v.group.position.y + 1);
+      this.collide(this.pos, 0.4);
+      this.buildGrid();
+      this.buildObstacleCache();
+    }
+    this.camera.fov = 72;
+    this.camera.updateProjectionMatrix();
+    this.viewModel.visible = true;
+    audio.click();
+    this.msg('Vehicle parked.', 'info');
+    this.emitHud();
+  }
+
+  updateVehicleMotion(dt) {
+    const v = this.vehicle;
+    const lvl = this.level;
+    if (!v || !lvl) return;
+    const k = this.keys;
+    const throttle = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
+    const steerIn = (k.has('KeyA') ? 1 : 0) - (k.has('KeyD') ? 1 : 0);
+    const handbrake = k.has('Space');
+    if (throttle > 0) this.vehSpeed += 9.5 * dt;
+    else if (throttle < 0) this.vehSpeed -= (this.vehSpeed > 0.5 ? 15 : 6) * dt;
+    else this.vehSpeed *= Math.pow(0.55, dt);
+    if (handbrake) this.vehSpeed *= Math.pow(0.03, dt);
+    this.vehSpeed = Math.max(-6, Math.min(19, this.vehSpeed));
+    if (Math.abs(this.vehSpeed) < 0.08) this.vehSpeed = 0;
+
+    const dir = this.vehSpeed >= 0 ? 1 : -1;
+    const grip = Math.min(1, Math.abs(this.vehSpeed) / 3.5);
+    v.group.rotation.y += steerIn * 1.55 * grip * dir * dt;
+
+    const yaw = v.group.rotation.y;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const ox = v.group.position.x;
+    const oz = v.group.position.z;
+    v.group.position.x += fx * this.vehSpeed * dt;
+    v.group.position.z += fz * this.vehSpeed * dt;
+
+    this.collide(v.group.position, 1.35);
+    const b = lvl.bounds;
+    v.group.position.x = Math.max(-b, Math.min(b, v.group.position.x));
+    v.group.position.z = Math.max(-b, Math.min(b, v.group.position.z));
+    const moved = Math.hypot(v.group.position.x - ox, v.group.position.z - oz);
+    const wanted = Math.abs(this.vehSpeed) * dt;
+    if (wanted > 0.01 && moved < wanted * 0.45) {
+      if (Math.abs(this.vehSpeed) > 5) this.shake = Math.max(this.shake, 0.4);
+      this.vehSpeed *= -0.18;
+    }
+    v.group.position.y = lvl.heightAt(v.group.position.x, v.group.position.z, v.group.position.y + 1);
+    this.pos.copy(v.group.position);
+    this.vel.set(fx * this.vehSpeed, 0, fz * this.vehSpeed);
+    this.moving = Math.abs(this.vehSpeed) > 1;
+
+    // Roadkill physics: anyone caught in the bumper takes impact damage and bleeds
+    if (Math.abs(this.vehSpeed) > 4.5) {
+      for (const a of this.actors) {
+        if (a.dead) continue;
+        const dx = a.pos.x - v.group.position.x;
+        const dz = a.pos.z - v.group.position.z;
+        if (dx * dx + dz * dz > 5.3) continue;
+        const now = this.elapsed;
+        if (a._vehHitAt && now - a._vehHitAt < 0.6) continue;
+        a._vehHitAt = now;
+        const dmg = Math.min(120, 18 + Math.abs(this.vehSpeed) * 4.5);
+        const impactDir = new THREE.Vector3(fx, 0.2, fz);
+        const killed = a.takeDamage(dmg, impactDir, false);
+        a.addBloodHit(false);
+        this.spawnBloodBurst(a.pos.clone().setY(a.pos.y + 1), impactDir, 1.6, false);
+        if (killed) this.onKill(a);
+      }
+    }
+  }
+
+  updateVehicleCamera() {
+    const v = this.vehicle;
+    if (!v) return;
+    const yaw = v.group.rotation.y;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const p = v.group.position;
+    this.camera.position.set(p.x - fx * 7.4, p.y + 3.35, p.z - fz * 7.4);
+    this.camera.lookAt(p.x + fx * 3.4, p.y + 1.3, p.z + fz * 3.4);
+    this.camera.rotation.z += (Math.random() - 0.5) * this.shake * 0.012;
+    if (Math.abs(this.camera.fov - 76) > 0.05) {
+      this.camera.fov += (76 - this.camera.fov) * Math.min(1, 0.2);
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   // ---------------- main loop + software-WebGL pacing ----------------
@@ -1736,6 +2108,7 @@ export class Game {
   }
 
   updateFx(dt) {
+    this.updateBlood(dt);
     for (let i = this.fx.length - 1; i >= 0; i--) {
       const f = this.fx[i];
       f.life -= dt;
@@ -1776,7 +2149,16 @@ export class Game {
         }
         if (pk.grenade > 0) this.stats.grenades = (this.stats.grenades ?? 0) + pk.grenade;
         audio.pickup();
-        const label = pk.kind === 'shotgun' ? '12G shells' : pk.kind === 'pistol' ? '9mm rds' : pk.kind === 'grenade' ? 'Frag Grenade' : '5.56 rds';
+        const label =
+          pk.kind === 'shotgun'
+            ? '12G shells'
+            : pk.kind === 'pistol'
+              ? '9mm rds'
+              : pk.kind === 'sniper'
+                ? '7.62 sniper rds'
+                : pk.kind === 'grenade'
+                  ? 'Frag Grenade'
+                  : '5.56 rds';
         this.msg(`Picked up +${pk.amount} ${label}${pk.grenade ? ' & +1 Frag' : ''}`, 'loot');
         this.scene.remove(pk.mesh);
         this.pickups.splice(i, 1);
@@ -1792,7 +2174,8 @@ export class Game {
 
     // Keyboard turn fallback (arrow keys) — scaled proportionally when scoped for crisp tracking
     const k = this.keys;
-    const ads = this.scoped && this.reloadT <= 0 && (this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle');
+    const driving = !!this.vehicle;
+    const ads = this.scoped && this.reloadT <= 0 && (this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle' || this.weapon === 'sniper');
     const scopeSpec = computeScopeFov(this.weapon, ads, this.scopeZoom);
     const turnScale = scopeSpec.sensMult;
     if (k.has('ArrowLeft')) this.yaw += 1.9 * turnScale * dt;
@@ -1800,7 +2183,11 @@ export class Game {
     if (k.has('ArrowUp')) this.pitch = Math.min(1.45, this.pitch + 1.4 * turnScale * dt);
     if (k.has('ArrowDown')) this.pitch = Math.max(-1.45, this.pitch - 1.4 * turnScale * dt);
 
-    // Movement
+    const sprint = k.has('ShiftLeft') || k.has('ShiftRight');
+    // Movement — on foot, or vehicle physics while behind the wheel
+    if (driving) {
+      this.updateVehicleMotion(dt);
+    } else {
     const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const wish = new THREE.Vector3();
@@ -1808,7 +2195,6 @@ export class Game {
     if (k.has('KeyS')) wish.sub(fwd);
     if (k.has('KeyD')) wish.add(right);
     if (k.has('KeyA')) wish.sub(right);
-    const sprint = k.has('ShiftLeft') || k.has('ShiftRight');
     const slowed = s.health < 25 || s.hunger <= 0 || s.thirst <= 0;
     let speed = (sprint ? 7.4 : 4.4) * (s.moveSpeedMult ?? 1);
     if (slowed) speed *= 0.7;
@@ -1852,6 +2238,7 @@ export class Game {
         this.triggerFootstepEffect(ground, sprint);
       }
     }
+    }
 
     // Camera + firing shake (positional & rotational kick)
     this.bobT += dt * this.vel.length() * 1.6;
@@ -1887,6 +2274,10 @@ export class Game {
       f.children[1].position.z = -0.38 - this.recoil * 0.3;
       f.children[3].position.z = -0.2 - this.recoil * 0.3;
     }
+    if (driving) {
+      this.viewModel.visible = false;
+      this.updateVehicleCamera();
+    }
 
     // Weapons
     this.fireCd -= dt;
@@ -1902,7 +2293,7 @@ export class Game {
         }
       }
     }
-    if (this.mouseDown && (this.locked || this.allowUnlockedPlay)) {
+    if (!driving && this.mouseDown && (this.locked || this.allowUnlockedPlay)) {
       this.fire();
       if (!WEAPONS[this.weapon].auto) this.mouseDown = false;
     }
@@ -2043,6 +2434,17 @@ export class Game {
       }
     }
     if (!best && lvl.dynamicInteract) best = lvl.dynamicInteract(this.pos);
+    if (driving) {
+      best = {
+        key: 'exitVehicle',
+        pos: this.pos,
+        radius: 6,
+        label: 'Exit vehicle',
+        hold: 0.25,
+        action: () => this.exitVehicle(),
+      };
+      bestD = 0;
+    }
     const bkey = best ? best.key ?? best : null;
     if (bkey !== this.currentKey) this.interactT = 0;
     this.currentKey = bkey;
@@ -2126,7 +2528,8 @@ export class Game {
     const o = this.level.objective.pos;
     const { dist, bearing } = computeObjectiveBearing(this.yaw, this.pos.x, this.pos.z, o.x, o.z);
     const cur = this.current;
-    const ads = this.scoped && this.reloadT <= 0 && (this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle');
+    const ads = this.scoped && this.reloadT <= 0 && (this.weapon === 'pistol' || this.weapon === 'shotgun' || this.weapon === 'rifle' || this.weapon === 'sniper');
+    const targetDist = ads ? this.rangeUnderReticle() : null;
     this.onUpdate({
       phase: this.phase,
       stats: cloneStats(this.stats),
@@ -2148,6 +2551,9 @@ export class Game {
       nearFire: this.nearFire,
       reloading: this.reloadT > 0,
       scoped: ads,
+      targetDist,
+      driving: !!this.vehicle,
+      vehicleSpeed: Math.abs(this.vehSpeed),
       zoomLabel: computeScopeFov(this.weapon, ads, this.scopeZoom).zoomLabel,
       shelter: this.level.getShelterStatus ? this.level.getShelterStatus() : null,
     });

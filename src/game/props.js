@@ -715,7 +715,7 @@ export function makeAmmoPickup(kind = 'rifle') {
   const grp = new THREE.Group();
   const boxTex = ammoBoxTexture(kind);
   const sideMat = std({
-    color: kind === 'shotgun' ? 0x991b1b : kind === 'pistol' ? 0x1e3a5f : 0x3f4d28,
+    color: kind === 'shotgun' ? 0x991b1b : kind === 'pistol' ? 0x1e3a5f : kind === 'sniper' ? 0x33404a : 0x3f4d28,
     roughness: 0.62,
     metalness: 0.3,
   });
@@ -733,7 +733,7 @@ export function makeAmmoPickup(kind = 'rifle') {
   const latch = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.39), std({ color: 0xd4af37, metalness: 0.85, roughness: 0.25 }));
   latch.position.y = 0.26;
   const ringMat = new THREE.MeshBasicMaterial({
-    color: kind === 'shotgun' ? 0xf59e0b : kind === 'pistol' ? 0x60a5fa : kind === 'grenade' ? 0xef4444 : 0x84cc16,
+    color: kind === 'shotgun' ? 0xf59e0b : kind === 'pistol' ? 0x60a5fa : kind === 'sniper' ? 0xe2e8f0 : kind === 'grenade' ? 0xef4444 : 0x84cc16,
     transparent: true,
     opacity: 0.55,
     side: THREE.DoubleSide,
